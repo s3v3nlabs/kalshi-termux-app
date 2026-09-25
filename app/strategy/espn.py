@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
@@ -30,7 +30,26 @@ NEARBY_DAYS = 3
 # Point-spread → win probability. Home spread is negative when home is favored.
 # 0.16 per point is a rough logistic (~ -7 ≈ 75%). It is not a book moneyline.
 _SPREAD_K = 0.16
-_ET = ZoneInfo("America/New_York")
+_ET: Optional[ZoneInfo] = None
+
+
+def _eastern() -> ZoneInfo:
+    """America/New_York, loaded on first use.
+
+    Termux Python often has no system zoneinfo. PyPI ``tzdata`` (in
+    requirements.txt) supplies the IANA database ``ZoneInfo`` needs.
+    """
+    global _ET
+    if _ET is None:
+        try:
+            _ET = ZoneInfo("America/New_York")
+        except ZoneInfoNotFoundError as exc:
+            raise ZoneInfoNotFoundError(
+                "No time zone found with key America/New_York. "
+                "Install IANA tzdata: pip install tzdata"
+            ) from exc
+    return _ET
+
 
 # Longer prefixes first so college series are not shadowed.
 _SERIES: tuple[tuple[str, str], ...] = (
@@ -178,7 +197,7 @@ def is_full_game_market(market: dict) -> bool:
 
 
 def us_today() -> date:
-    return datetime.now(_ET).date()
+    return datetime.now(_eastern()).date()
 
 
 def parse_kalshi_game(market: dict) -> Optional[ParsedGame]:
@@ -496,7 +515,7 @@ def _date_rank(parsed: ParsedGame, event: dict) -> tuple[int, float]:
         dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except ValueError:
         return 0, 1e9
-    eastern = dt.astimezone(_ET).date()
+    eastern = dt.astimezone(_eastern()).date()
     utc_day = dt.astimezone(timezone.utc).date()
     if parsed.scheduled == eastern:
         rank = 2

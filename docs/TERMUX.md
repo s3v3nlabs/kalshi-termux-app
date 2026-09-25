@@ -51,3 +51,13 @@ PYTHONPATH=. python -m uvicorn app.main:app --host 0.0.0.0 --port 8787
 ```
 
 If `GET /` returns 500 with `TypeError: unhashable type: 'dict'`, update `app/main.py` or `git pull` so `TemplateResponse` passes `request` first (Starlette 1.x).
+
+## Time zones
+
+Android/Termux Python often has no system IANA time-zone database. `app/strategy/espn.py` needs `America/New_York`. `requirements.txt` includes PyPI `tzdata`, so `pip install -r requirements.txt` (the steps above) installs it.
+
+If startup or an ESPN scan fails with `ZoneInfoNotFoundError: 'No time zone found with key America/New_York'`, install the package and start again:
+
+```bash
+pip install tzdata
+```

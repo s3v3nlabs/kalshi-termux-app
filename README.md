@@ -37,6 +37,8 @@ LD_PRELOAD=$PREFIX/lib/libpython3.13.so ./start.sh
 Then open the printed URL (or run `termux-open-url http://127.0.0.1:8787`).
 If the browser shows connection refused, wait until Uvicorn says it is running, then refresh.
 
+`requirements.txt` includes PyPI `tzdata` because Termux often has no system time-zone data. If you see `ZoneInfoNotFoundError: 'No time zone found with key America/New_York'`, run `pip install tzdata` (or reinstall from `requirements.txt`). See [docs/TERMUX.md](docs/TERMUX.md).
+
 Optional: put the RSA PEM at `secrets/kalshi.key` (`chmod 600`) and set `KALSHI_KEY_ID` in `.env`.
 
 ### Without venv
