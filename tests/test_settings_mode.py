@@ -127,7 +127,12 @@ def test_real_order_only_when_live_allowed_and_armed(tmp_path):
         class Fake:
             def place_order(self, payload):
                 calls.append(payload)
-                return {"order": {"order_id": "test"}}
+                return {
+                    "order_id": "test-order",
+                    "fill_count": "0.00",
+                    "remaining_count": "1.00",
+                    "ts_ms": 1,
+                }
 
         gate = OrderGate(Store(tmp_path / "orders.db"), Fake())
         settings.dry_run = True
@@ -142,7 +147,11 @@ def test_real_order_only_when_live_allowed_and_armed(tmp_path):
         assert armed["ok"] is True
         sent = gate.place("T", "yes", 1, price_cents=22)
         assert sent["dry_run"] is False
+        assert sent["response"]["order_id"] == "test-order"
+        assert "test-order" in sent["message"]
         assert len(calls) == 1
+        assert calls[0]["side"] == "yes"
+        assert calls[0]["yes_price"] == 22
         gate.disarm()
         status = gate.status()
         assert status["live_allowed"] is True

@@ -81,6 +81,8 @@ API hosts (Trade API v2):
 - Also supported: `https://api.elections.kalshi.com`
 - Demo: `https://demo-api.kalshi.co`
 
+Live **Place bet** uses Create Order V2: `POST /trade-api/v2/portfolio/events/orders` (`bid` buys YES, `ask` buys NO, price is a fixed-point dollar on the YES book). Order history still uses `GET /trade-api/v2/portfolio/orders`. Paper bets never call create-order.
+
 ## Trading mode
 
 A new install uses **paper bets (no money)** until you tap **Allow live trading** in Settings and confirm. That choice is saved on the phone (`data/ui_prefs.json`, gitignored). Real orders still require typing **ARM LIVE** once per session. **Disarm** pauses real orders. **Paper bets only** turns live trading back off.

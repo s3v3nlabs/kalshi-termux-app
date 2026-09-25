@@ -140,7 +140,10 @@ class OrderGate:
                 payload=payload,
                 response=resp,
             )
+            order_id = resp.get("order_id") if isinstance(resp, dict) else None
             msg = f"[LIVE] Submitted BUY {count}x {side.upper()} {ticker}"
+            if order_id:
+                msg = f"{msg} ({order_id})"
             self.store.log_activity("order", msg, {"payload": payload, "response": resp})
             return {"ok": True, "dry_run": False, "order_log_id": oid, "response": resp, "message": msg}
         except Exception as e:

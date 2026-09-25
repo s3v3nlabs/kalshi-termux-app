@@ -20,6 +20,121 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from app.config import settings
 from app.kalshi.rate_limit import TokenBucketManager
 
+# Create Order (V2). The legacy POST /portfolio/orders path returns HTTP 410
+# deprecated_v1_order_endpoint. Reads stay on /portfolio/orders.
+# https://docs.kalshi.com/api-reference/orders/create-order-v2
+CREATE_ORDER_V2_PATH = "/trade-api/v2/portfolio/events/orders"
+
+
+def cents_to_fixed_dollars(cents: int) -> str:
+    """Integer cents (1–99) → fixed-point dollar string, e.g. 22 → \"0.2200\"."""
+    if isinstance(cents, bool) or not isinstance(cents, int) or not 1 <= cents <= 99:
+        raise ValueError("price must be an integer number of cents from 1 to 99")
+    return f"0.{cents:02d}00"
+
+
+def fixed_point_count(count: int) -> str:
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise ValueError("count must be an integer >= 1")
+    return f"{count:.2f}"
+
+
+def to_create_order_v2(order: dict) -> dict:
+    """Map this app's buy yes/no payload onto Kalshi Create Order V2.
+
+    V2 quotes a single YES book: ``bid`` buys YES, ``ask`` buys NO at
+    ``1 - price``. ``price`` is fixed-point dollars. A blank price (the UI's
+    market-style order) becomes an immediate-or-cancel at 99 cents on that
+    outcome, because V2 has no separate market type.
+    """
+    side = str(order.get("side", "")).lower()
+    if side in {"bid", "ask"}:
+        return _passthrough_create_order_v2(order)
+    if side not in {"yes", "no"}:
+        raise ValueError("side must be yes or no")
+    action = str(order.get("action") or "buy").lower()
+    if action != "buy":
+        raise ValueError("only buy orders are supported")
+    ticker = str(order.get("ticker") or "").strip()
+    if not ticker:
+        raise ValueError("ticker is required")
+
+    count = fixed_point_count(order.get("count"))
+    order_type = str(order.get("type") or "limit").lower()
+    price_key = "yes_price" if side == "yes" else "no_price"
+    raw_price = order.get(price_key)
+    if raw_price is None and order_type != "market":
+        order_type = "market"
+
+    if order_type == "market" and raw_price is None:
+        # Pay up to 99¢ for the chosen outcome, then cancel any remainder.
+        if side == "yes":
+            book_side = "bid"
+            price = cents_to_fixed_dollars(99)
+        else:
+            book_side = "ask"
+            price = cents_to_fixed_dollars(1)
+        time_in_force = "immediate_or_cancel"
+    else:
+        if raw_price is None:
+            raise ValueError("limit order requires a price")
+        if isinstance(raw_price, bool) or not isinstance(raw_price, int):
+            raise ValueError("price must be an integer number of cents from 1 to 99")
+        if side == "yes":
+            book_side = "bid"
+            price = cents_to_fixed_dollars(raw_price)
+        else:
+            # Buying NO at N cents rests as an ask at (100 − N) cents on the YES book.
+            book_side = "ask"
+            price = cents_to_fixed_dollars(100 - raw_price)
+        time_in_force = "immediate_or_cancel" if order_type == "market" else "good_till_canceled"
+
+    body: dict[str, Any] = {"ticker": ticker}
+    client_order_id = order.get("client_order_id")
+    if client_order_id:
+        body["client_order_id"] = str(client_order_id)
+    body.update(
+        {
+            "side": book_side,
+            "count": count,
+            "price": price,
+            "time_in_force": time_in_force,
+            "self_trade_prevention_type": "taker_at_cross",
+        }
+    )
+    return body
+
+
+def _passthrough_create_order_v2(order: dict) -> dict:
+    """Accept an already-built V2 body without translating yes/no prices."""
+    required = ("ticker", "side", "count", "price", "time_in_force", "self_trade_prevention_type")
+    missing = [key for key in required if order.get(key) in (None, "")]
+    if missing:
+        raise ValueError("V2 order missing " + ", ".join(missing))
+    count = order["count"]
+    if isinstance(count, str):
+        count_fp = count
+    else:
+        count_fp = fixed_point_count(count)
+    price = order["price"]
+    if not isinstance(price, str):
+        raise ValueError("V2 price must be a fixed-point dollar string")
+    body: dict[str, Any] = {
+        "ticker": str(order["ticker"]),
+        "side": str(order["side"]),
+        "count": count_fp,
+        "price": price,
+        "time_in_force": str(order["time_in_force"]),
+        "self_trade_prevention_type": str(order["self_trade_prevention_type"]),
+    }
+    if order.get("client_order_id"):
+        body = {
+            "ticker": body["ticker"],
+            "client_order_id": str(order["client_order_id"]),
+            **{k: v for k, v in body.items() if k != "ticker"},
+        }
+    return body
+
 
 class KalshiClient:
     def __init__(
@@ -210,6 +325,7 @@ class KalshiClient:
         return self.auth_get("/trade-api/v2/portfolio/positions", params={"limit": limit})
 
     def get_orders(self, status: Optional[str] = None, limit: int = 20) -> dict:
+        # Reads stay on /portfolio/orders. The events/orders path is write-only.
         params: dict[str, Any] = {"limit": limit}
         if status:
             params["status"] = status
@@ -219,7 +335,9 @@ class KalshiClient:
         return self.auth_get("/trade-api/v2/portfolio/fills", params={"limit": limit})
 
     def place_order(self, order: dict) -> dict:
-        return self.auth_post("/trade-api/v2/portfolio/orders", order)
+        """Submit a live order via Create Order V2. Returns the V2 ack."""
+        body = to_create_order_v2(order)
+        return self.auth_post(CREATE_ORDER_V2_PATH, body)
 
     def ping(self) -> dict:
         """Lightweight connectivity check with host metadata."""
