@@ -292,7 +292,7 @@ function baseRowH() {
   return isPhone() ? 128 : 48;
 }
 function detailH() {
-  return isPhone() ? 230 : 190;
+  return isPhone() ? 520 : 380;
 }
 function rowH(m) {
   return baseRowH() + (m.ticker === expandedTicker ? detailH() : 0);
@@ -326,6 +326,48 @@ function featureBreakdown(m) {
     <p class="mono feat-sum">z = ${z.toFixed(3)} → p = ${(p * 100).toFixed(1)}% · mispricing ${
       m.mispricing == null ? "— (not in top 10 by volume)" : (m.mispricing * 100).toFixed(2) + "pp"
     }${m.model_uncalibrated ? " · Kelly halved (uncalibrated)" : ""}</p>
+    ${gemBreakdown(m)}
+  </div>`;
+}
+
+function gemBadge(m) {
+  const g = m.gemini;
+  if (!g) return "";
+  const tier = `<span class="tier t${g.payout_tier}">${g.payout_tier === "13x" ? "13x+" : g.payout_tier} · ${Number(g.payout_odds).toFixed(1)}x</span>`;
+  const gem = m.gem
+    ? `<span class="gem-badge${m.gem_status === "unverified" ? " unverified" : ""}" title="Payout anomaly: high payout, tight spread, Nash > 0.4, model above market, positive half-Kelly. A screen for odd prices, not a sure thing${
+        m.model_uncalibrated ? " — model is not calibrated yet" : ""
+      }.">◆ GEM${m.gem_status === "unverified" ? "?" : ""}</span>`
+    : "";
+  return gem + tier;
+}
+
+function gemBreakdown(m) {
+  const g = m.gemini;
+  if (!g) return "";
+  const ck = g.checks || {};
+  const label = {
+    high_payout_tier: "13x+ tier",
+    tight_spread: "spread ≤ 3¢",
+    nash_go: "Nash > 0.4",
+    beats_implied: "p ≥ implied + 2pp",
+    positive_half_kelly: "½-Kelly > 0",
+  };
+  const fmt = (v, d = 4) => (v == null ? "—" : Number(v).toFixed(d));
+  return `<div class="gem-box">
+    <p class="gem-head">Gemini anomaly check (${String(m.best_side || "").toUpperCase()} side) ${
+      m.gem ? `<span class="gem-badge">◆ GEM${m.gem_status === "unverified" ? "? · unverified: model not calibrated yet" : ""}</span>` : ""
+    }</p>
+    <table class="feat-table"><tbody>
+      <tr><td>spread (¢)</td><td>${fmt(g.spread_cents, 2)}</td><td>spread_compression</td><td>${fmt(g.spread_compression)}</td></tr>
+      <tr><td>vol_oi_ratio</td><td>${fmt(g.vol_oi_ratio, 3)}</td><td>implied_prob</td><td>${fmt(g.implied_prob)}</td></tr>
+      <tr><td>payout_odds</td><td>${fmt(g.payout_odds, 2)}x</td><td>payout_tier</td><td>${escapeHtml(g.payout_tier)}</td></tr>
+      <tr><td>model p</td><td>${fmt(g.p)}</td><td>edge vs implied</td><td>${(g.edge_vs_implied * 100).toFixed(1)}pp</td></tr>
+      <tr><td>nash_payoff</td><td>${fmt(g.nash_payoff)}</td><td>½-Kelly</td><td>${(g.half_kelly_fraction * 100).toFixed(2)}% · $${fmt(g.half_kelly_allocation, 2)}</td></tr>
+    </tbody></table>
+    <div class="gem-checks">${Object.keys(label)
+      .map((k) => `<span class="${ck[k] ? "ok" : "no"}">${ck[k] ? "✓" : "✗"} ${label[k]}</span>`)
+      .join("")}</div>
   </div>`;
 }
 
@@ -341,7 +383,7 @@ function scanRowHtml(m) {
     : `<span class="geo blocked" title="${escapeHtml(g.reason || "Blocked")}">BLOCKED${g.state ? " " + escapeHtml(g.state) : ""}</span>`;
   return `
     <div class="scan-main">
-      <span class="c-ticker" data-label="Ticker"><span class="mono">${escapeHtml(m.ticker || "")}</span><small>${escapeHtml(
+      <span class="c-ticker" data-label="Ticker"><span class="mono">${escapeHtml(m.ticker || "")}</span><small>${gemBadge(m)} ${escapeHtml(
         m.title || ""
       )}</small></span>
       <span data-label="Mkt P">${pct(m.model && m.model.market_p_yes)}</span>
@@ -434,6 +476,8 @@ function renderMarkets(data) {
     `model v${data.model_version ?? 0}`,
   ];
   if (data.model_uncalibrated) meta.push("model uncalibrated · Kelly halved");
+  const gems = (data.markets || []).filter((m) => m.gem).length;
+  meta.push(`${gems} gem candidate${gems === 1 ? "" : "s"}`);
   if (data.espn) meta.push(`ESPN ${data.espn.matched || 0} matched (${data.espn.live || 0} live)`);
   if (data.geo) meta.push(`geo ${data.geo.state || "unknown"} · ${data.geo.blocked || 0} blocked`);
   // Server order is the ranking (mispricing first); filters only hide rows.
@@ -481,6 +525,8 @@ function matchesFilter(m) {
       return Boolean(m.sports_game) || isEspn(m);
     case "go":
       return m.signal === "GO";
+    case "gem":
+      return Boolean(m.gem);
     default:
       return true;
   }
@@ -488,7 +534,7 @@ function matchesFilter(m) {
 
 function filterLabel(f) {
   return (
-    { all: "All", espn: "ESPN matched", live: "ESPN live now", sports: "Sports games", go: "GO only" }[f] || f
+    { all: "All", espn: "ESPN matched", live: "ESPN live now", sports: "Sports games", go: "GO only", gem: "Gems" }[f] || f
   );
 }
 

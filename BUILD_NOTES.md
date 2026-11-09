@@ -166,3 +166,19 @@ All in the existing `templates/index.html`, `static/js/app.js`, `static/css/app.
 7. **Mobile**: under 600 px the scanner table becomes cards (labelled cells, 3-column grid), tap targets are ≥ 44 px everywhere, and filter chips wrap instead of side-scrolling. The bottom bar is Markets / Calib / Bets / Backtest / More, and More opens Bet / Kelly / Account / Settings / Log. A Playwright check at 360 and 412 px (Termux phone widths) and 1280 px found, on every panel: document scrollWidth = clientWidth, no element past the right edge, no control under 44 px, and no JS errors.
 
 - Tests: `/bets` + settle route (`tests/test_ledger.py`); Promote refuses the fixture (`tests/test_backtest.py`).
+
+## Gemini payout-anomaly ("hidden gem") layer (`app/strategy/gems.py`)
+
+From the ai_agent.py scrap. Computed per scan row for the side the scanner leads with, the higher-payout side (`best_side`):
+
+- `spread = yes_ask − yes_bid` in cents (from `yes_*_dollars` or the cent fields; the existing YES+NO−1 parity spread when no bid is published). `spread_compression = 1 / (spread + 1)`; `vol_oi_ratio = volume / (open_interest + 1)`.
+- **implied_prob decision:** the scrap used `yes_bid / 100`. The rebuild uses the **ask of the side you would buy** (YES ask, or NO ask for a NO buy). You pay the ask, so that is the price the payout is based on. The bid is what you could sell at, and using it would overstate the payout. It also means only an ask is ever needed. `payout_odds = 1 / implied_prob`, or 2.0 when implied_prob ≤ 0 (as in the scrap). This equals the existing `best_payout_multiple`.
+- Payout tier: `2x` ≤ 3x, `13x` ≥ 10x, `mid` otherwise.
+- Gemini half-Kelly is kept as is: p clipped to [0.01, 0.99], `kelly_f = (p·odds − q) / odds`, `fractional = max(0, 0.5·kelly_f)`, also halved again when the model is uncalibrated. Nash `p·odds − (1−p)` with GO > 0.4 is also kept.
+- **Gem rule** (every check must pass): tier `13x` (≥ 10x) **and** spread_compression ≥ 0.25 (spread ≤ 3¢) **and** nash_payoff > 0.4 **and** model p ≥ implied_prob + 2 points **and** half-Kelly > 0. p is the logistic model's probability for that side, which includes the ESPN delta.
+  - The thresholds are the simplest round numbers matching the scrap's "13x" and "tight book" intent; they live as constants in `gems.py`.
+  - Half-Kelly > 0 is already implied by Nash > 0.4, but it is kept as a separate check because the spec lists it.
+- `gem_status` is `"unverified"` while the model is uncalibrated (Brier > 0.25 or no settled bets), otherwise `"candidate"`. The UI shows **◆ GEM?** (dashed amber) for unverified and **◆ GEM** for candidate. Copy says it is a screen for odd prices, not a sure thing. There is no "guaranteed" or "lock" wording, and a test checks for it.
+- The default sort stays mispricing. The new "Gems (13x anomalies)" filter chip only hides rows. The row expand adds the Gemini block (spread, spread_compression, vol_oi_ratio, implied_prob, payout_odds, payout_tier, model p, edge vs implied, nash_payoff, half-Kelly) and a ✓/✗ per check under the z-input table.
+- The geo gate is unchanged and fails closed; a gem on a blocked sports ticker still has Buy disabled. There is no location spoofing or bypass.
+- **Live smoke (Nov 8 2026, 11:37 PM ET):** 288 rows; 12 in the 13x tier; 8 flagged (4 of them in the 168-row UI view), all "unverified". They come from the flat starting weights: 1–5¢ tails get model p 0.34–0.56, so almost every tight-spread 13x tail passes. Examples are both sides of a likely-decided NFL game at 20x, and 100x metals and props. **Until the model is refit on settled bets and calibrated, treat gems as leads to check by hand, not signals.**

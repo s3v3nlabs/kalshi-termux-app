@@ -13,6 +13,7 @@ from app.strategy.espn import (
     select_nearby_games,
     us_today,
 )
+from app.strategy.gems import gem_check
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds, kelly_size
 from app.strategy.model import build_features, load_model, predict
 from app.strategy.nash import mispricing_scores, nash_decision, nash_to_dict
@@ -349,6 +350,16 @@ def enrich_market(
     nash_pay = gemini_nash_payoff(best_p, best_mult)
     signal = "GO" if nash_pay > NASH_GO_THRESHOLD else "NO-GO"
     model_p_source = prob_source
+    # Gemini payout-anomaly layer: implied_prob = ask of the side we buy.
+    gem = gem_check(
+        p=best_p,
+        implied_prob=best_price,
+        spread_cents=spread_cents,
+        volume=vol,
+        open_interest=oi,
+        bankroll=bankroll,
+        kelly_scale=kelly_scale,
+    )
 
     cheap = (yes_ask * 100 <= settings.max_contract_price_cents) or (
         no_ask * 100 <= settings.max_contract_price_cents
@@ -440,6 +451,11 @@ def enrich_market(
         },
         "explainer": explainer,
         "score": round(score, 4),
+        "gemini": gem,
+        "gem": gem["gem"],
+        # A gem from an uncalibrated model is a lead to check, nothing more.
+        "gem_status": ("unverified" if uncalibrated else "candidate") if gem["gem"] else None,
+        "payout_tier": gem["payout_tier"],
     }
 
 

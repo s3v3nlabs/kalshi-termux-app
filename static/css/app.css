@@ -518,3 +518,16 @@ img, svg, table { max-width: 100%; }
   .filters-row .inline-label input, .filters-row .inline-label select { flex: 1 1 auto; width: auto; min-width: 0; max-width: 70%; }
   .filters-row .btn { flex: 1 1 100%; }
 }
+
+/* ---------- Gemini payout-anomaly layer ---------- */
+.gem-badge { display: inline-block; font-family: var(--mono); font-size: 0.62rem; font-weight: 800; color: #0b0f1a;
+  background: linear-gradient(110deg, var(--amber), var(--magenta)); border-radius: 6px; padding: 1px 6px; margin-right: 4px; }
+.tier { display: inline-block; font-family: var(--mono); font-size: 0.62rem; border: 1px solid var(--border); border-radius: 6px; padding: 0 5px; margin-right: 4px; color: var(--muted); }
+.tier.t13x { color: var(--magenta); border-color: rgba(232, 121, 249, 0.45); }
+.tier.tmid { color: var(--purple); }
+.gem-box { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
+.gem-head { margin: 0 0 4px; font-size: 0.76rem; color: var(--text); font-weight: 600; }
+.gem-box .feat-table td:nth-child(3) { text-align: left; color: var(--muted); padding-left: 12px; }
+.gem-checks { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-family: var(--mono); font-size: 0.7rem; }
+.gem-checks .ok { color: var(--green); } .gem-checks .no { color: var(--muted); }
+.gem-badge.unverified { background: transparent; color: var(--amber); border: 1px dashed var(--amber); }
