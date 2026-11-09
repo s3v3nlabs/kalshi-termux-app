@@ -354,3 +354,36 @@ Requested by the account owner: more speed, but no risk of a ban. Kalshi limits 
 - **Env vars:** `SNIPER_EV_MIN` 0.03, `SNIPER_NEAR_FRAC` 0.25, `SNIPER_WINDOW_MIN` 30, `SNIPER_CANCEL_S` 20, `SNIPER_MAX_ORDERS` 3, `SNIPER_INTERVAL_S` 15, `SNIPER_FAST_INTERVAL_S` 3, `SNIPER_EVENT_COOLDOWN_S` 300, `SNIPER_MIN_GAP_S` 2.
 - **Verified:** a paper cycle against real public data (clock set to tonight's slate) found 24 candidates and resolved 12 milestones ("BUF Bills at MIN Vikings", "SA Spurs at PHX Suns"). Nothing was near the finish, so no orders. Live order and cancel paths are covered only by fakes (no keys). Football/baseball `live_data` period formats were not seen live yet (only basketball/hockey).
 - Tests: `tests/test_sniper.py` (11).
+
+### 8. Multi-core scoring pool (`app/compute/pool.py`)
+
+- `ComputePool` defaults to a `ProcessPoolExecutor` across the CPU cores. It uses the `forkserver`/`spawn` start method, not `fork`, so it is safe next to uvicorn's threads; that is also Python 3.14's Linux default. The first submit is probed. If processes are unavailable (Android/Termux builds without `sem_open`, sandboxes), it falls back to a `ThreadPoolExecutor` and records why. `COMPUTE_POOL=auto|process|thread|off`, `COMPUTE_WORKERS`.
+- Batches under 64 items run inline, since process start-up costs more than a few dozen sniper rows. A broken pool (`BrokenProcessPool`, pickling errors) re-runs the batch inline and downgrades to threads.
+- **Uses:**
+  - Sniper scoring: `score_batch` puts the probability step (`sniper_prob`, picklable) through the pool, and sizing stays local.
+  - Learner: `train_and_gate` runs `model.fit` through `run_cpu`, which goes to another core only when the training set is ≥640 samples (otherwise inline).
+- **`REMOTE_COMPUTE_URL` (OFF by default):** an HTTP endpoint the user runs on their own machine (`tools/remote_compute_server.py`, stdlib only).
+  - It receives **only** `league, status, lead, frac_left, live_win_p, prior_p` (no ticker, prices, bankroll, keys or orders) and returns probabilities, clamped to [0.02, 0.98] on return.
+  - Any host containing "kalshi" is refused, and so is any non-http(s) URL.
+  - Errors and timeouts (3 s) fall back to local compute.
+  - It **never makes Kalshi calls**: all Kalshi traffic stays on the one in-app client and its shared budget. This is the ban-safe version of "more compute": more math, not more API identities or IPs.
+- `/api/status.compute` reports kind, workers, cpu_count, remote host, fallback reason and stats. Settings → Speed shows "Scoring: N cores / N threads (+ your remote box)".
+- Verified here: the process pool ran on this 8-core box (`kind: process`). The thread fallback is covered by a test that simulates a missing `sem_open`. On-phone behaviour was not verified (no device).
+- Tests: `tests/test_compute_pool.py` (8).
+
+### Speed pack: new dependencies, settings, and what still needs live keys
+
+- **pip:** `httpx>=0.27.0` and `websockets>=13.0` (both pure Python on Termux). No new `pkg` packages. Version is now 1.3.0. The service-worker cache moved to `kalshi-shell-v5`.
+- **Settings → Speed card:**
+  - feed state, key type and scoring pool
+  - API tier with read/write rates
+  - **Upgrade API tier to Advanced (free)** button
+  - **Auto-upgrade tier** toggle (OFF)
+  - **Near-finish sniper** toggle (OFF)
+  - Auto-bet stays on the top-strip AUTO switch.
+- **Needs live keys to verify (not possible from the build box):**
+  - the signed WebSocket handshake and the fill/user_orders feed on warp-ws
+  - `GET /account/limits` sizing with your real tier
+  - the Advanced upgrade POST
+  - live sniper orders and their 20 s auto-cancel
+  - fee totals on real fills (the cent vs centicent rounding on your account)

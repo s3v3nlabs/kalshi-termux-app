@@ -388,7 +388,11 @@ def train_and_gate(
             f"{MIN_TRAIN_MARKETS} / {MIN_HOLDOUT_MARKETS}). Kept current weights."
         )
     else:
-        proposed = M.fit(_samples(train), current, epochs=epochs)
+        from app.compute.pool import get_pool
+
+        samples = _samples(train)
+        # Big fits run on another core (process pool, thread fallback); small ones inline.
+        proposed = get_pool().run_cpu(M.fit, samples, current, epochs=epochs, min_size=len(samples), timeout_s=600)
         cur_tr, new_tr = bt.run_backtest(train, current), bt.run_backtest(train, proposed)
         cur_ho, new_ho = bt.run_backtest(holdout, current), bt.run_backtest(holdout, proposed)
         passed = bt.gate(new_ho["brier"], cur_ho["brier"]) and new_ho["brier"] < cur_ho["brier"]

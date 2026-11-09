@@ -91,6 +91,7 @@ async def _lifespan(_app):
     finally:
         for t in tasks:
             t.cancel()
+        get_pool().shutdown()
 
 
 app = FastAPI(
@@ -177,7 +178,8 @@ autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto
 learner = Learner(ledger=ledger, store=store, client_fn=lambda: client)
 
 from app.strategy.espn import get_board  # noqa: E402
-from app.trading.sniper import Sniper  # noqa: E402
+from app.compute.pool import get_pool  # noqa: E402
+from app.trading.sniper import Sniper, score_batch  # noqa: E402
 
 
 def _ws_quotes(tickers: list) -> dict:
@@ -196,6 +198,7 @@ sniper = Sniper(
     exchange_gate=exchange_gate, fee_multiplier_fn=series_fees.multiplier,
     quotes_fn=_ws_quotes, watch_fn=lambda ts: stream.set_watch("sniper", ts),
     espn_fn=lambda m: get_board().estimate(m),
+    score_fn=lambda cands: score_batch(cands, prob_fn=get_pool().sniper_probs),
 )
 
 _LAST_ASK: dict[str, tuple] = {}
@@ -337,6 +340,7 @@ def api_status():
         "bucket": client.bucket.status(),
         "stream": stream.status(),
         "sniper": {k: sniper.status()[k] for k in ("enabled", "mode", "hot", "watching")},
+        "compute": get_pool().status(),
         "exchange": ping,
         "exchange_error": err,
         "disclaimer": "Not financial advice. No guaranteed win rate. Risk of loss.",

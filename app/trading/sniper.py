@@ -214,17 +214,22 @@ def game_state_from_live(league: str, live: dict, home: bool) -> Optional[dict]:
     return out
 
 
-def score_candidate(c: dict) -> dict:
-    """Model probability + both sides' fee-aware sizing for one market.
+PROB_FIELDS = ("league", "status", "lead", "frac_left", "live_win_p", "prior_p")
 
-    Picklable on purpose: the compute pool can run it in another process.
-    ``c``: league, lead, frac_left, live_win_p, prior_p, yes_ask, no_ask,
-    bankroll, fraction, max_fraction, fee_multiplier, ev_min.
-    """
+
+def sniper_prob(c: dict) -> float:
+    """Model P(YES) from game state only (no prices, no bankroll, no ticker).
+    Picklable; this is the part the compute pool / remote hook may run."""
     if c.get("status") == "closed":
-        p_yes = 0.98 if c["lead"] > 0 else 0.02 if c["lead"] < 0 else 0.5
-    else:
-        p_yes = win_probability(c["league"], c["lead"], c["frac_left"], c.get("prior_p"), c.get("live_win_p"))
+        lead = float(c.get("lead") or 0)
+        return 0.98 if lead > 0 else 0.02 if lead < 0 else 0.5
+    return win_probability(c["league"], float(c.get("lead") or 0), float(c.get("frac_left") or 0),
+                           c.get("prior_p"), c.get("live_win_p"))
+
+
+def size_pick(c: dict, p_yes: float) -> dict:
+    """Both sides' fee-aware sizing for one market at its asks (local only)."""
+    p_yes = max(0.02, min(0.98, float(p_yes)))
     best = None
     for side, ask, p in (("yes", c.get("yes_ask"), p_yes), ("no", c.get("no_ask"), 1.0 - p_yes)):
         try:
@@ -245,6 +250,21 @@ def score_candidate(c: dict) -> dict:
         if best is None or pick["ev_total"] > best["ev_total"]:
             best = pick
     return {"ticker": c.get("ticker"), "p_yes": round(p_yes, 4), "pick": best}
+
+
+def score_candidate(c: dict) -> dict:
+    """Model probability + both sides' fee-aware sizing for one market.
+
+    ``c``: league, status, lead, frac_left, live_win_p, prior_p, yes_ask,
+    no_ask, bankroll, fraction, max_fraction, fee_multiplier, ev_min.
+    """
+    return size_pick(c, sniper_prob(c))
+
+
+def score_batch(cands: list, prob_fn: Optional[Callable[[list], list]] = None) -> list:
+    """Probabilities (optionally via the compute pool) then local sizing."""
+    probs = prob_fn([{k: c.get(k) for k in PROB_FIELDS} for c in cands]) if prob_fn else [sniper_prob(c) for c in cands]
+    return [size_pick(c, p) for c, p in zip(cands, probs)]
 
 
 def _iso_ts(v: Any) -> Optional[float]:
@@ -290,7 +310,7 @@ class Sniper:
         self.quotes_fn = quotes_fn
         self.watch_fn = watch_fn
         self.espn_fn = espn_fn
-        self.score_fn = score_fn or (lambda cands: [score_candidate(c) for c in cands])
+        self.score_fn = score_fn or score_batch
         self._clock = clock
         self.ev_min = _env_float("SNIPER_EV_MIN", 0.03)
         self.near_frac = _env_float("SNIPER_NEAR_FRAC", 0.25)

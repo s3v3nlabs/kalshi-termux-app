@@ -87,3 +87,10 @@ pip install fastapi uvicorn requests python-dotenv pyotp jinja2 pydantic tzdata 
 ## Auto-bet and continuous learning on the phone
 
 Both run inside the server process, so they only work while Termux is running `./start.sh`. Run `termux-wake-lock` first so Android does not suspend Termux with the screen off. Auto-bet is OFF until you tap **AUTO** in the top strip; it places real orders only while mode is LIVE and Kalshi keys exist. Set `GEO_LOCAL_STATE` in `.env` or every sports market stays blocked (also for Auto-bet).
+
+## Speed pack (v1.3.0) on Termux
+
+- **No new `pkg install` steps.** `pip install -r requirements.txt` adds `httpx` (pure Python) and `websockets` (pure Python; its optional C speedup is skipped automatically when no compiler is available, or force that with `BUILD_EXTENSION=no pip install websockets`).
+- **Scoring pool:** it tries a process pool across your cores. Some Android builds lack the POSIX semaphores that `multiprocessing` needs. The app then falls back to threads on its own, and Settings → Speed shows "Scoring: N threads". You can force a mode with `COMPUTE_POOL=thread` (or `off`).
+- **Battery:** the WebSocket feed and the sniper's 3-second cadence (only during the last quarter/period of a live game, and only when the sniper is ON) keep the phone busy. Use `termux-wake-lock` while trading, and turn the sniper off when you're not using it.
+- **Optional remote helper:** to move model math off the phone, run `python tools/remote_compute_server.py --host 0.0.0.0` on a computer you own and set `REMOTE_COMPUTE_URL=http://<that-computer>:8765/compute`. It only receives game-state numbers and never contacts Kalshi. All Kalshi requests still go from the phone's single key and budget.

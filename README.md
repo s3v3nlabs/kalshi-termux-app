@@ -11,6 +11,21 @@ Mobile-first **Kalshi prediction-market** web app for Termux → browser.
 
 > Not financial advice. Prediction markets involve risk of loss. **No 100% win-rate claims.**
 
+## Speed pack (v1.3.0)
+
+The speed pack stays inside Kalshi's rules: **one key, one client, one shared rate budget**. No proxies, extra accounts or keys, IP rotation, or location spoofing.
+
+- **Rate-limit-aware client:** read and write token buckets sized from your tier (`GET /account/limits`) at 85%, with Kalshi's per-endpoint costs, the balance endpoint's own 1/s bucket, and exponential backoff with jitter on 429.
+- **Live feed:** a WebSocket orderbook, ticker, trade and lifecycle feed for the top scanner rows, plus a separate fill/order connection. It resyncs on sequence gaps, reconnects with backoff, and falls back to REST polling. Header badge: LIVE FEED / POLLING.
+- **Trading gate:** auto-bet and the sniper pause whenever Kalshi reports `trading_active=false` (badge: TRADING PAUSED).
+- **API tier (Settings → Speed):** shows your tier, has a one-tap **free Advanced upgrade**, and an optional auto-upgrade. These need keys and at least one API-placed order.
+- **Keys:** Ed25519 or RSA keys both work; the type is detected from the file.
+- **Fees:** EV, Kelly size and auto-bet picks are computed **after Kalshi's taker fee** (`0.07 × C × P × (1−P)`, rounded up, times the series multiplier).
+- **Near-finish sniper (OFF by default, Settings → Speed):** works on late-game sports markets, using a score + time model from Kalshi live data (ESPN fallback). It respects PAPER/LIVE, the sports state gate and the Kelly cap, and cancels unfilled orders after 20 s. Every bet is an estimate and can lose.
+- **Multi-core scoring:** a process pool with a thread fallback, plus an optional `REMOTE_COMPUTE_URL` math-only helper you run yourself (`tools/remote_compute_server.py`). It never talks to Kalshi.
+
+New pip dependencies are `httpx` and `websockets`, both pure Python on Termux (`websockets` skips its optional C speedup if no compiler is present; `uvicorn[standard]` already pulled it in). No new `pkg install` steps. Details and env vars: [BUILD_NOTES.md](BUILD_NOTES.md#speed-pack-nov-9-2026-v130).
+
 ## Termux one-shot install
 
 PyPI `cryptography` crashes on Termux (`PyBaseObject_Type` / `_rust.abi3.so`). Install Termux `python-cryptography`, create the venv with `--system-site-packages`, then uninstall the pip overlay that `requirements.txt` installs. Full notes: [docs/TERMUX.md](docs/TERMUX.md).
