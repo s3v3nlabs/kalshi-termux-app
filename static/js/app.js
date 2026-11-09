@@ -53,6 +53,82 @@ let currentContract = null;
 let currentMode = { paper: true, armed: false };
 let scanFilter = "all";
 
+/* ---------- ARM LIVE strip (operator console, screen 4) ---------- */
+let lastStatus = null;
+let stripBankroll = null;
+
+function todayPnl() {
+  const today = new Date().toDateString();
+  return allBets
+    .filter((b) => b.outcome != null && b.ts && new Date(b.ts).toDateString() === today)
+    .reduce((t, b) => t + Number(b.pnl || 0), 0);
+}
+
+function paintArmStrip() {
+  const s = lastStatus;
+  if (!s) return;
+  const gate = s.order_gate || {};
+  const armed = Boolean(gate.live_armed) && !s.dry_run;
+  const mode = $("#strip-mode");
+  mode.textContent = armed ? "LIVE · REAL MONEY" : s.dry_run ? "DRY RUN · paper" : "LIVE READY · not armed";
+  mode.className = "arm-mode " + (armed ? "live" : s.dry_run ? "paper" : "ready");
+  document.body.classList.toggle("live-armed", armed);
+  $("#strip-bankroll").textContent = stripBankroll == null ? (s.has_keys ? "locked" : "no key") : "$" + Number(stripBankroll).toFixed(2);
+  const p = todayPnl();
+  $("#strip-pnl").textContent = (p < 0 ? "−$" : "$") + Math.abs(p).toFixed(2);
+  $("#strip-pnl").className = p < 0 ? "neg" : p > 0 ? "pos" : "";
+  $("#strip-arm-phrase").classList.toggle("hidden", armed);
+  $("#strip-arm").classList.toggle("hidden", armed);
+  $("#strip-arm-totp").classList.toggle("hidden", armed || !s.totp_configured);
+  $("#strip-disarm").classList.toggle("hidden", !armed);
+  $("#strip-arm").title = s.dry_run ? "Allow live trading in Settings first" : "Arms real orders for this session";
+}
+
+async function refreshStripMoney() {
+  if (lastStatus && lastStatus.has_keys) {
+    try {
+      const b = await api("/api/account/balance");
+      stripBankroll = b.balance_dollars ?? null;
+    } catch {
+      stripBankroll = null;
+    }
+  }
+  try {
+    allBets = (await api("/bets")).bets || allBets;
+  } catch {}
+  paintArmStrip();
+}
+
+$("#strip-arm-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (lastStatus && lastStatus.dry_run) {
+    toast("Allow live trading in Settings first");
+    openSettings("#arm-card");
+    return;
+  }
+  try {
+    const r = await api("/api/trading/arm", {
+      method: "POST",
+      body: JSON.stringify({
+        confirm_phrase: $("#strip-arm-phrase").value,
+        totp_code: $("#strip-arm-totp").value || null,
+      }),
+    });
+    toast(r.ok ? "Real orders are on" : r.error || "Could not arm");
+    $("#strip-arm-phrase").value = "";
+    $("#strip-arm-totp").value = "";
+    refreshStatus();
+  } catch (e) {
+    toast(e.message);
+  }
+});
+$("#strip-disarm").addEventListener("click", async () => {
+  await api("/api/trading/disarm", { method: "POST", body: "{}" });
+  toast("Real orders paused");
+  refreshStatus();
+});
+setInterval(() => document.visibilityState === "visible" && refreshStripMoney(), 30000);
+
 function paintMode(s) {
   const gate = s.order_gate || {};
   const paper = Boolean(s.dry_run);
@@ -118,7 +194,9 @@ function paintMode(s) {
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
+    lastStatus = s;
     paintMode(s);
+    paintArmStrip();
     $("#badge-host").textContent = (s.host_key || "?") + " · " + (s.host || "").replace("https://", "");
     const ex = s.exchange;
     const eb = $("#badge-ex");
@@ -1146,7 +1224,15 @@ if (!localStorage.getItem("kalshi_howto_seen")) {
 }
 
 updatePreview();
-refreshStatus();
+refreshStatus().then(refreshStripMoney);
 runScan(false);
 refreshActivity();
 setInterval(refreshStatus, 30000);
+
+// Keep the sticky scanner header just below the ARM strip, whatever its wrapped height.
+function syncStripHeight() {
+  const h = $("#arm-strip").getBoundingClientRect().height;
+  document.documentElement.style.setProperty("--strip-h", Math.ceil(h) + "px");
+}
+window.addEventListener("resize", syncStripHeight);
+syncStripHeight();

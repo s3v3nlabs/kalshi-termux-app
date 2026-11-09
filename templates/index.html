@@ -15,6 +15,17 @@
   <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body>
+  <div class="arm-strip" id="arm-strip" role="region" aria-label="Trading mode">
+    <span class="arm-mode" id="strip-mode">PAPER</span>
+    <span class="arm-stat"><small>Bankroll</small><b id="strip-bankroll">—</b></span>
+    <span class="arm-stat"><small>Today P&amp;L</small><b id="strip-pnl">$0.00</b></span>
+    <form class="arm-form" id="strip-arm-form" autocomplete="off">
+      <input id="strip-arm-phrase" placeholder="type ARM LIVE" aria-label="Type ARM LIVE to arm real orders" autocomplete="off" />
+      <input id="strip-arm-totp" class="hidden" inputmode="numeric" placeholder="code" aria-label="Extra lock code" autocomplete="one-time-code" />
+      <button class="btn danger" id="strip-arm" type="submit">ARM LIVE</button>
+      <button class="btn ghost hidden" id="strip-disarm" type="button">Disarm</button>
+    </form>
+  </div>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
