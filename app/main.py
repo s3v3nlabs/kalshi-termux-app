@@ -121,6 +121,7 @@ orders = OrderGate(store, client, ledger)
 
 from app.trading.exchange_gate import ExchangeGate  # noqa: E402
 from app.kalshi.tier import TierManager  # noqa: E402
+from app.strategy.fees import SeriesFees  # noqa: E402
 
 tier = TierManager(store, lambda: client, lambda: settings.has_keys)
 
@@ -169,8 +170,9 @@ def _auto_scan(bankroll: float) -> dict:
 from app.strategy.learner import Learner  # noqa: E402
 from app.trading.autobet import AutoBetEngine  # noqa: E402
 
+series_fees = SeriesFees(lambda s: client.get_series(s))
 autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto_scan, client_fn=lambda: client,
-                        exchange_gate=exchange_gate)
+                        exchange_gate=exchange_gate, fee_multiplier_fn=series_fees.multiplier)
 learner = Learner(ledger=ledger, store=store, client_fn=lambda: client)
 
 _LAST_ASK: dict[str, tuple] = {}

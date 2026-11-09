@@ -945,8 +945,9 @@ async function analyze() {
           .join("")}
       </div>
       <h3>Kelly size</h3>
-      <p class="mono muted">${k.side} · ${k.contracts} contracts · $${k.allocation_usd}
+      <p class="mono muted">${k.side} · ${k.contracts} contracts · $${k.allocation_usd} incl. fee
         (${k.kelly_pct_of_bankroll}% bankroll) · full f*=${k.full_kelly} · ${escapeHtml(k.reason)}</p>
+      <p class="mono muted">Kalshi taker fee $${k.fee_total ?? "—"} · edge/contract ${k.edge} before fee, ${k.edge_net ?? "—"} after · EV after fees $${k.ev_total_net ?? "—"} (estimate, can lose)</p>
       <h3>Monte Carlo sim</h3>
       <p class="muted">${escapeHtml(s?.label || "")}</p>
       <p class="mono muted">collapsed p=${s?.collapsed_prob} · payoff=${s?.nash_payoff}

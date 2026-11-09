@@ -35,7 +35,7 @@ from typing import Any, Callable, Iterable, Optional
 from app import geo
 from app.config import settings
 from app.kalshi.client import MAX_CONTRACTS_PER_ORDER
-from app.strategy.kelly import kelly_size
+from app.strategy.fees import fee_aware_kelly, series_of, taker_fee
 
 log = logging.getLogger(__name__)
 
@@ -72,15 +72,19 @@ def _local_midnight_utc_iso(now: Optional[datetime] = None) -> str:
     return midnight.astimezone(timezone.utc).isoformat()
 
 
-def best_auto_side(row: dict, bankroll: float) -> Optional[dict]:
-    """Pick the side with the larger positive expected profit, sized by the
-    scanner's own Kelly settings (``kelly_scale`` carries the Brier halving)."""
+def best_auto_side(row: dict, bankroll: float, fee_multiplier: Optional[float] = None) -> Optional[dict]:
+    """Pick the side with the larger positive expected profit AFTER Kalshi's
+    taker fee, sized by fee-aware Kelly on the scanner's own Kelly settings
+    (``kelly_scale`` carries the Brier halving). ``fee_multiplier`` is the
+    series' taker multiplier (default: row["fee_multiplier"] or 1.0)."""
     p_yes = (row.get("nash") or {}).get("model_prob_yes")
     if p_yes is None:
         p_yes = (row.get("model") or {}).get("p_yes")
     if p_yes is None:
         return None
     scale = float(row.get("kelly_scale") or 1.0)
+    mult = fee_multiplier if fee_multiplier is not None else row.get("fee_multiplier")
+    mult = 1.0 if mult is None else float(mult)
     best = None
     for side, price, p in (
         ("yes", row.get("yes_ask"), float(p_yes)),
@@ -92,26 +96,31 @@ def best_auto_side(row: dict, bankroll: float) -> Optional[dict]:
             continue
         if not 0.0 < price < 1.0:
             continue
-        k = kelly_size(
-            model_prob=p,
-            contract_price=price,
-            bankroll=bankroll,
+        cents = max(1, min(99, int(round(price * 100))))
+        price = cents / 100.0  # the limit price actually sent
+        k = fee_aware_kelly(
+            p,
+            price,
+            bankroll,
             fraction=settings.kelly_fraction * scale,
             max_fraction=settings.kelly_max_fraction * scale,
+            multiplier=mult,
+            max_contracts=MAX_CONTRACTS_PER_ORDER,
         )
-        if k.edge <= 0 or k.contracts < 1:
+        if k.contracts < 1 or k.ev_total_net <= 0:
             continue
-        contracts = min(int(k.contracts), MAX_CONTRACTS_PER_ORDER)
-        cents = max(1, min(99, int(round(price * 100))))
         pick = {
             "side": side,
             "price": price,
             "price_cents": cents,
-            "count": contracts,
+            "count": int(k.contracts),
             "model_p": round(p, 6),
-            "edge": float(k.edge),
-            "ev_total": round(float(k.edge) * contracts, 4),
-            "kelly_pct": k.kelly_pct_of_bankroll,
+            "edge": round(k.gross_edge, 4),
+            "edge_net": round(k.net_edge, 4),
+            "fee_total": round(k.fee_total, 4),
+            "fee_multiplier": mult,
+            "ev_total": round(k.ev_total_net, 4),
+            "kelly_pct": k.kelly_pct,
         }
         if best is None or pick["ev_total"] > best["ev_total"]:
             best = pick
@@ -127,9 +136,11 @@ def select_candidates(
     held_events: Iterable[str] = (),
     top_n: int = 5,
     geo_check: Callable[[str, Optional[str]], dict] = geo.check,
+    fee_multiplier_fn: Optional[Callable[[str], float]] = None,
 ) -> tuple[list[dict], dict]:
     """Rows arrive in scanner order (mispricing / Nash first). Returns
-    (picks, skip_counts). One pick per event; held / resting markets skipped."""
+    (picks, skip_counts). One pick per event; held / resting markets skipped.
+    ``fee_multiplier_fn(series_ticker)`` supplies the series' fee multiplier."""
     held_t = {str(t).upper() for t in held_tickers}
     held_e = {str(e).upper() for e in held_events}
     picks: list[dict] = []
@@ -148,7 +159,13 @@ def select_candidates(
         if ticker in held_t or ev in held_e:
             skipped["held"] += 1
             continue
-        pick = best_auto_side(row, bankroll)
+        mult = None
+        if fee_multiplier_fn is not None:
+            try:
+                mult = float(fee_multiplier_fn(series_of(row)))
+            except Exception:
+                mult = None
+        pick = best_auto_side(row, bankroll, fee_multiplier=mult)
         if pick is None:
             skipped["no_edge"] += 1
             continue
@@ -200,8 +217,10 @@ class AutoBetEngine:
         top_n: Optional[int] = None,
         paper_bankroll: Optional[float] = None,
         exchange_gate: Optional[Any] = None,
+        fee_multiplier_fn: Optional[Callable[[str], float]] = None,
     ):
         self.store = store
+        self.fee_multiplier_fn = fee_multiplier_fn
         self.ledger = ledger
         self.orders = orders
         self.scan_fn = scan_fn
@@ -326,7 +345,8 @@ class AutoBetEngine:
             if notes:
                 summary["notes"] = notes
             picks, skipped = select_candidates(
-                rows, bankroll=bankroll, state=state, held_tickers=held_t, held_events=held_e, top_n=self.top_n
+                rows, bankroll=bankroll, state=state, held_tickers=held_t, held_events=held_e, top_n=self.top_n,
+                fee_multiplier_fn=self.fee_multiplier_fn,
             )
             summary.update({"scanned": len(rows), "picked": len(picks), "skipped": skipped, "state": state})
             remaining = bankroll
@@ -340,12 +360,14 @@ class AutoBetEngine:
                 if self.exchange_gate is not None and not self.exchange_gate.check().get("ok"):
                     summary["stopped"] = "Kalshi trading stopped mid-cycle"
                     break
-                cost = pick["count"] * pick["price_cents"] / 100.0
-                if cost > remaining:
-                    pick["count"] = int(remaining // (pick["price_cents"] / 100.0))
-                    if pick["count"] < 1:
-                        continue
-                    cost = pick["count"] * pick["price_cents"] / 100.0
+                px = pick["price_cents"] / 100.0
+                mult = float(pick.get("fee_multiplier") or 1.0)
+                cost = pick["count"] * px + taker_fee(px, pick["count"], mult)
+                while pick["count"] >= 1 and cost > remaining:  # fee included
+                    pick["count"] -= 1
+                    cost = pick["count"] * px + taker_fee(px, pick["count"], mult)
+                if pick["count"] < 1:
+                    continue
                 summary["orders"].append(self._place(pick, live))
                 if summary["orders"][-1]["ok"]:
                     summary["placed"] += 1

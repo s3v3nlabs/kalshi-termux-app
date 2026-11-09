@@ -84,8 +84,10 @@ def env(tmp_path, monkeypatch):
 def test_best_side_uses_positive_edge_and_existing_kelly():
     pick = best_auto_side(ROWS[0], 1000.0)
     assert pick["side"] == "yes" and pick["price_cents"] == 40 and pick["edge"] > 0
-    # half-Kelly (uncalibrated scale 0.5) of a 5% max fraction = 2.5% of 1000 -> $25 / 0.40 = 62
-    assert pick["count"] == 62
+    # half-Kelly (uncalibrated scale 0.5) of a 5% max fraction = 2.5% of 1000 -> $25.
+    # Fee-aware: 59 x $0.40 + taker fee ceil(0.07*59*0.4*0.6)=$1.00 = $24.60 <= $25 (60 would be $25.01)
+    assert pick["count"] == 59 and pick["fee_total"] == 1.0
+    assert pick["ev_total"] == round(59 * 0.2 - 1.0, 4)
     no_pick = best_auto_side(ROWS[3], 1000.0)
     assert no_pick["side"] == "no" and no_pick["price_cents"] == 45
     assert best_auto_side(ROWS[2], 1000.0) is None

@@ -18,6 +18,7 @@ from app.strategy.espn import (
 from app.strategy.analogs import annotate_rows
 from app.strategy.context import ContextAdapters, get_context
 from app.strategy.gems import gem_check, suppress_paired_gems
+from app.strategy.fees import fee_aware_kelly, fee_per_contract_raw, fee_total
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds, kelly_size
 from app.strategy.model import build_features, load_model, predict
 from app.strategy.nash import mispricing_scores, nash_decision, nash_to_dict
@@ -361,6 +362,18 @@ def enrich_market(
         fraction=settings.kelly_fraction * kelly_scale,
         max_fraction=settings.kelly_max_fraction * kelly_scale,
     )
+    # Kalshi taker fee (scanner: multiplier 1, conservative; auto-bet and the
+    # sniper re-price with the series' real multiplier). Kelly size and EV
+    # shown/ranked are AFTER fees.
+    fee_mult = float(m.get("_fee_multiplier") or 1.0)
+    net = fee_aware_kelly(
+        best_p,
+        best_price,
+        bankroll,
+        fraction=settings.kelly_fraction * kelly_scale,
+        max_fraction=settings.kelly_max_fraction * kelly_scale,
+        multiplier=fee_mult,
+    )
     # Gemini half-Kelly on gross payout odds. fraction 0.5 matches the scrap.
     gk = kelly_from_payout_odds(
         p=best_p,
@@ -387,7 +400,7 @@ def enrich_market(
     )
     high_payout = best_mult >= settings.min_payout_multiple
     thin_penalty = 0.5 if (vol + oi) < 100 else 0.0
-    pos_ev = max(0.0, float(kelly.expected_value_per_contract))
+    pos_ev = max(0.0, float(net.net_edge))
     # Money-seeking rank: payout multiple + positive EV + Nash payoff + half-Kelly.
     score = (
         best_mult
@@ -403,7 +416,7 @@ def enrich_market(
         payout_odds=best_mult,
         model_p=best_p,
         allocation=gk.allocation,
-        binary_contracts=kelly.contracts,
+        binary_contracts=net.contracts,
         prob_source=prob_source,
         espn_hint=espn_hint,
     )
@@ -465,12 +478,24 @@ def enrich_market(
             "side": best_side,
             "full_kelly": kelly.full_kelly,
             "fractional_kelly": kelly.fractional_kelly,
-            "allocation_usd": kelly.allocation_usd,
+            "allocation_usd": round(net.cost_total, 2),
             "kelly_pct_of_bankroll": kelly.kelly_pct_of_bankroll,
-            "contracts": kelly.contracts,
+            "contracts": net.contracts,
+            "contracts_before_fees": kelly.contracts,
             "edge": kelly.edge,
-            "expected_value_per_contract": kelly.expected_value_per_contract,
-            "reason": kelly.reason,
+            "edge_net": net.net_edge,
+            "fee_total": net.fee_total,
+            "fee_per_contract": net.fee_per_contract,
+            "ev_total_net": net.ev_total_net,
+            "expected_value_per_contract": net.net_edge,
+            "reason": net.reason if net.contracts or kelly.contracts else kelly.reason,
+        },
+        "fee": {
+            "type": "taker",
+            "multiplier": fee_mult,
+            "per_contract_1": fee_total(best_price, 1, multiplier=fee_mult),
+            "per_contract_large": round(fee_per_contract_raw(best_price, fee_mult), 4),
+            "net_edge_1": round(best_p - best_price - fee_total(best_price, 1, multiplier=fee_mult), 4),
         },
         "explainer": explainer,
         "score": round(score, 4),

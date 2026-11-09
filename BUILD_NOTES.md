@@ -322,3 +322,18 @@ Requested by the account owner: more speed, but no risk of a ban. Kalshi limits 
 - **How the type is detected:** both key types usually arrive as `-----BEGIN PRIVATE KEY-----` (PKCS#8), so the header can't identify them. The app parses the PEM and checks the key object (`key_type_of`), and the sync REST client, async client and both WebSocket connections sign through the same `sign_text`.
 - `/api/status` now reports `key_type` (`ed25519` / `rsa` / null; cached by file mtime, never key material), and Settings → Speed shows "Key signing: Ed25519 / RSA-PSS / none". Saving a key in Settings already reported the detected type.
 - Tests: `tests/test_signing.py` (7) generate both key types and verify REST, WS and sync-client signatures with the public key. They also check that the same PEM header gives correct detection and that bad or missing files return None.
+
+### 6. Fee-aware EV and Kelly (`app/strategy/fees.py`)
+
+- **Formula (Kalshi Fee Schedule, effective Jul 7 2026; docs "Fee Rounding" + series `fee_type`/`fee_multiplier`, read Nov 9 2026):**
+  - taker fee = `round_up(M × 0.07 × C × P × (1 − P))`, with M = series `fee_multiplier` (default 1)
+  - maker fee = `round_up(M × 0.0175 × C × P × (1 − P))`, charged only on series with `fee_type` `quadratic_with_maker_fees` / `..._combo_maker_fees`
+  - P is the price in dollars and C the number of contracts in the order. Kalshi rounds up. The schedule's table rounds to the cent (1 contract @ 50¢ → $0.02); direct members can be billed at centicent precision. The app uses the conservative whole cent (env `FEE_ROUND=0.01`; set `0.0001` for centicents). Example series: `KXMLBGAME` has multiplier 0.5 with maker fees.
+- The app buys at the ask with limit orders that normally take liquidity, so EV and Kelly use the **taker** fee.
+- **Kelly after fees:** Kelly runs on the fee-inclusive cost (price + fee/contract), then shrinks the count until (a) contracts × price + rounded order fee fits the Kelly allocation and (b) net EV (`C × (p − P) − fee`) is still positive. A thin edge that the fee eats (e.g. p = 0.52 at 50¢: the 2¢ edge is cancelled by the 2¢ fee on 1 contract) becomes PASS.
+- **Where it's used:**
+  - Scanner rows: `kelly.contracts`, `allocation_usd` (fee included), `expected_value_per_contract` (now net), `edge_net`, `fee_total`, `ev_total_net` and a `fee` block. The score's EV term uses net edge. The scanner uses multiplier 1 (no per-series calls during a scan).
+  - Auto-bet: `best_auto_side` ranks sides by net EV. `select_candidates` re-prices with the series' real multiplier (`SeriesFees`: `GET /series/{t}`, cached 6 h, falls back to 1.0). Budget checks include the fee.
+  - The market detail view shows the fee and EV before/after fees ("estimate, can lose").
+- Behaviour change: the existing auto-bet sizing test now expects 59 contracts instead of 62 ($25 Kelly allocation = 59 × $0.40 + $1.00 fee).
+- Tests: `tests/test_fees.py` (5) cover schedule examples, rounding/multiplier, the fee killing a thin edge, cached series lookup with fallback, the auto-bet multiplier, and scanner fields.
