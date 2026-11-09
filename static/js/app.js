@@ -325,7 +325,11 @@ async function refreshStatus() {
     $("#badge-host").textContent = (s.host_key || "?") + " · " + (s.host || "").replace("https://", "");
     const ex = s.exchange;
     const eb = $("#badge-ex");
-    if (ex && ex.exchange_active) {
+    if (ex && ex.exchange_active && ex.trading_active === false) {
+      eb.textContent = "TRADING PAUSED";
+      eb.className = "badge warn";
+      eb.title = "Kalshi is not taking trades right now. Auto-bet and the sniper wait.";
+    } else if (ex && ex.exchange_active) {
       eb.textContent = "EXCHANGE ACTIVE";
       eb.className = "badge live";
     } else if (s.exchange_error) {

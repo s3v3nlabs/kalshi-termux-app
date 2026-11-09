@@ -116,6 +116,11 @@ totp_mgr = TOTPManager(vault)
 client = KalshiClient()
 orders = OrderGate(store, client, ledger)
 
+from app.trading.exchange_gate import ExchangeGate  # noqa: E402
+
+# trading_active gate for automated orders (cached 15 s, fails closed).
+exchange_gate = ExchangeGate(lambda: client.exchange_status())
+
 # Live market data (WebSocket). Falls back to REST polling when not connected.
 books = BookStore()
 stream = MarketStream(books)
@@ -158,7 +163,8 @@ def _auto_scan(bankroll: float) -> dict:
 from app.strategy.learner import Learner  # noqa: E402
 from app.trading.autobet import AutoBetEngine  # noqa: E402
 
-autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto_scan, client_fn=lambda: client)
+autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto_scan, client_fn=lambda: client,
+                        exchange_gate=exchange_gate)
 learner = Learner(ledger=ledger, store=store, client_fn=lambda: client)
 
 _LAST_ASK: dict[str, tuple] = {}
@@ -248,12 +254,17 @@ def _balance_dollars(data: dict) -> Any:
 
 @app.get("/api/status")
 def api_status():
+    # Cached exchange status (shared with the auto-bet/sniper gate) instead of
+    # a fresh REST call on every status poll.
+    ex = exchange_gate.check()
     ping = None
     err = None
-    try:
-        ping = client.ping()
-    except Exception as e:
-        err = str(e)
+    if ex.get("readable"):
+        ping = {"ok": True, "host": client.host, "host_key": settings.host_key,
+                "exchange_active": ex["exchange_active"], "trading_active": ex["trading_active"],
+                "authenticated": settings.has_keys, "age_s": ex.get("age_s")}
+    else:
+        err = ex.get("reason")
     gate = orders.status()
     return {
         "version": __version__,
@@ -276,6 +287,12 @@ def api_status():
         "exchange_error": err,
         "disclaimer": "Not financial advice. No guaranteed win rate. Risk of loss.",
     }
+
+
+@app.get("/api/exchange")
+def api_exchange(refresh: bool = False):
+    """trading_active gate used by auto-bet and the sniper (cached 15 s)."""
+    return exchange_gate.check(force=bool(refresh))
 
 
 @app.get("/api/stream")

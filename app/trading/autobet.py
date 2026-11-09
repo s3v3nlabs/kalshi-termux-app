@@ -199,6 +199,7 @@ class AutoBetEngine:
         interval_s: Optional[float] = None,
         top_n: Optional[int] = None,
         paper_bankroll: Optional[float] = None,
+        exchange_gate: Optional[Any] = None,
     ):
         self.store = store
         self.ledger = ledger
@@ -212,6 +213,7 @@ class AutoBetEngine:
         self.paper_bankroll = float(
             paper_bankroll if paper_bankroll is not None else _env_float("AUTOBET_PAPER_BANKROLL", 1000.0)
         )
+        self.exchange_gate = exchange_gate
         self.min_gap_s = _env_float("AUTOBET_MIN_GAP_S", 10.0)
         self._last_start_mono = 0.0
         self.pokes = 0
@@ -303,6 +305,12 @@ class AutoBetEngine:
         try:
             live = bool(self.orders.live_armed)
             summary["mode"] = "live" if live else "paper"
+            if self.exchange_gate is not None:
+                ex = self.exchange_gate.check()
+                summary["exchange"] = {k: ex.get(k) for k in ("ok", "trading_active", "reason")}
+                if not ex.get("ok"):
+                    summary["error"] = ex.get("reason") or "Kalshi trading is not active"
+                    return summary
             if live and not settings.has_keys:
                 summary["error"] = "Live — add Kalshi keys in Settings"
                 return summary
@@ -329,6 +337,9 @@ class AutoBetEngine:
                 # Re-check the gate at send time: a blocked sports order never leaves here.
                 if not geo.check(str(pick["ticker"]), self.state_fn()).get("allowed"):
                     continue
+                if self.exchange_gate is not None and not self.exchange_gate.check().get("ok"):
+                    summary["stopped"] = "Kalshi trading stopped mid-cycle"
+                    break
                 cost = pick["count"] * pick["price_cents"] / 100.0
                 if cost > remaining:
                     pick["count"] = int(remaining // (pick["price_cents"] / 100.0))

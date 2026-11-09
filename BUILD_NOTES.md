@@ -298,3 +298,11 @@ Requested by the account owner: more speed, but no risk of a ban. Kalshi limits 
 - Deps: `websockets>=13` added to requirements.txt. It was already installed through `uvicorn[standard]`, has a pure-Python wheel, and its C speedup is optional. If the import ever fails, the app keeps polling.
 - Not verified live: no Kalshi key is available in the build sandbox, so the authenticated handshake and real message flow were tested only against recorded doc-shaped messages.
 - Tests: `tests/test_speed_stream.py` (9): book math, the seq tracker, delta-before-snapshot, overlay, subscribe/lifecycle, gap → `get_snapshot`, add/delete markets, no keys → polling, fill → bet with NO price conversion, the scanner using live quotes and reusing the list, and `/api/stream`.
+
+### 3. Exchange status gate (`app/trading/exchange_gate.py`)
+
+- `GET /exchange/status` is public. `exchange_active` is false during maintenance (with an optional `exchange_estimated_resume_time`). `trading_active` is false outside trading hours or when Kalshi pauses trading.
+- Auto-bet (and the sniper, item 7) place orders only when both are true. The gate is checked at the start of a cycle and again before each order. When it is closed, the cycle records the reason ("Kalshi trading is paused or outside trading hours") and sends nothing. This applies to paper mode too, so paper results stay realistic.
+- The result is cached for `EXCHANGE_STATUS_TTL_S` (15 s), or 5 s after an error. `/api/status` now reads the cached value instead of making a fresh REST call on every poll, which saves read tokens. **Fails closed:** if the status can't be read, no automated orders go out. Manual taps are unchanged, and Kalshi rejects them itself when trading is closed.
+- UI: the exchange badge shows **TRADING PAUSED** when the exchange is up but trading is off. `GET /api/exchange?refresh=1`.
+- Tests: `tests/test_exchange_gate.py` (4) cover open/paused/maintenance, the cache TTL, fail-closed on error, the auto-bet cycle waiting and then resuming, and the endpoint/status wiring.
