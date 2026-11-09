@@ -51,10 +51,32 @@ def _background_enabled() -> bool:
     return "pytest" not in sys.modules
 
 
+BUDGET_REFRESH_S = 6 * 3600
+_BUDGET_LOAD: dict = {}
+
+
+async def _budget_loop() -> None:
+    """Size the shared request budget from Kalshi (endpoint costs, and with
+    keys GET /account/limits), then refresh every 6 hours."""
+    from app.kalshi.async_client import AsyncKalshiClient
+
+    while True:
+        ac = AsyncKalshiClient()
+        try:
+            _BUDGET_LOAD.clear()
+            _BUDGET_LOAD.update(await ac.load_budget())
+        except Exception as exc:  # pragma: no cover - load_budget catches
+            _BUDGET_LOAD["errors"] = [str(exc)]
+        finally:
+            await ac.aclose()
+        await asyncio.sleep(BUDGET_REFRESH_S)
+
+
 @asynccontextmanager
 async def _lifespan(_app):
     tasks = []
     if _background_enabled():
+        tasks.append(asyncio.create_task(_budget_loop(), name="budget"))
         tasks.append(asyncio.create_task(autobet.run_forever(), name="autobet"))
         tasks.append(asyncio.create_task(learner.run_forever(), name="learner"))
     try:

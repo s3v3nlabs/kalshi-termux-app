@@ -24,7 +24,9 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.config import settings
+from app.kalshi.budget import KalshiBudget, get_budget
 from app.kalshi.rate_limit import TokenBucketManager
+from app.kalshi.signing import sign_text
 
 # Create Order (V2). The legacy POST /portfolio/orders path returns HTTP 410
 # deprecated_v1_order_endpoint. Reads stay on /portfolio/orders.
@@ -417,6 +419,18 @@ def presign_text(timestamp: str, method: str, path: str) -> str:
     return f"{timestamp}{method.upper()}{path.split('?')[0]}"
 
 
+class BudgetPacing:
+    """Per-client view of the shared budget. ``total`` is the request pacer
+    (shared by default; tests may swap it). Token buckets are always shared."""
+
+    def __init__(self, budget: KalshiBudget):
+        self.budget = budget
+        self.total = budget.pacer
+
+    def status(self) -> dict:
+        return self.budget.status()
+
+
 class KalshiClient:
     def __init__(
         self,
@@ -424,11 +438,14 @@ class KalshiClient:
         key_id: Optional[str] = None,
         key_path: Optional[Path] = None,
         bucket: Optional[TokenBucketManager] = None,
+        budget: Optional[KalshiBudget] = None,
     ):
         self.host = (host or settings.api_base).rstrip("/")
         self.key_id = key_id if key_id is not None else settings.key_id
         self.key_path = Path(key_path) if key_path else settings.key_path
-        self.bucket = bucket or TokenBucketManager(tier="basic")
+        # Every request draws from ONE process-wide budget (app.kalshi.budget).
+        self.budget = budget or get_budget()
+        self.bucket = bucket or BudgetPacing(self.budget)
         self._session = requests.Session()
         self._private_key = None
         self.last_host_used = self.host
@@ -455,22 +472,7 @@ class KalshiClient:
         RSA uses PSS with SHA-256 / MGF1-SHA-256 / salt = digest length.
         ``body_str`` is accepted for backwards compatibility and ignored.
         """
-        private_key = self._load_key()
-        payload = presign_text(timestamp, method, path).encode("utf-8")
-        if isinstance(private_key, Ed25519PrivateKey):
-            signature = private_key.sign(payload)
-        elif isinstance(private_key, rsa.RSAPrivateKey):
-            signature = private_key.sign(
-                payload,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.DIGEST_LENGTH,
-                ),
-                hashes.SHA256(),
-            )
-        else:
-            raise ValueError("Kalshi keys must be RSA or Ed25519 private keys")
-        return base64.b64encode(signature).decode("utf-8")
+        return sign_text(self._load_key(), presign_text(timestamp, method, path))
 
     def _auth_headers(self, method: str, path: str, body_str: str = "") -> dict:
         if not self.key_id:
@@ -499,11 +501,6 @@ class KalshiClient:
     ) -> dict[str, Any]:
         """Return parsed JSON or raise with useful context."""
         is_write = method.upper() in {"POST", "PUT", "DELETE", "PATCH"}
-        if is_write:
-            self.bucket.consume_write(1.0)
-        else:
-            self.bucket.consume_read(1.0)
-
         if not path.startswith("/"):
             path = "/" + path
         base = (host or self.host).rstrip("/")
@@ -519,14 +516,11 @@ class KalshiClient:
         retry_statuses = RETRY_STATUSES_WRITE if is_write else RETRY_STATUSES_READ
         resp = None
         for attempt in range(MAX_TRIES):
-            if attempt:
-                # Re-check token buckets and re-sign (fresh timestamp) per try.
-                if is_write:
-                    self.bucket.consume_write(1.0)
-                else:
-                    self.bucket.consume_read(1.0)
-                if auth:
-                    headers = self._auth_headers(method, path, body_str)
+            # Shared token budget (read / write / balance bucket, endpoint cost),
+            # checked again on every retry; then the request pacer.
+            self.budget.acquire_sync(method, path, pace=False)
+            if attempt and auth:
+                headers = self._auth_headers(method, path, body_str)  # fresh timestamp
             self.bucket.total.acquire()
             try:
                 resp = self._session.request(
@@ -543,6 +537,8 @@ class KalshiClient:
                     raise RuntimeError(f"Network error contacting {base}: {e}") from e
                 self._sleep(backoff_delay(attempt, rng=self._rng))
                 continue
+            if resp.status_code == 429:
+                self.budget.note_429(method, path)
             if resp.status_code in retry_statuses and attempt < MAX_TRIES - 1:
                 hdrs = getattr(resp, "headers", None) or {}
                 ra = retry_after_seconds(hdrs.get("Retry-After") or hdrs.get("retry-after"))
@@ -676,6 +672,25 @@ class KalshiClient:
 
     def get_fills(self, limit: int = 20) -> dict:
         return self.auth_get("/trade-api/v2/portfolio/fills", params={"limit": limit})
+
+    def cancel_order(self, order_id: str, market_ticker: Optional[str] = None) -> dict:
+        """Cancel Order V2: DELETE /portfolio/events/orders/{order_id} (2 tokens).
+        ``market_ticker`` lets Kalshi auto-route to the right shard."""
+        params = {"market_ticker": market_ticker} if market_ticker else None
+        return self.request("DELETE", f"{CREATE_ORDER_V2_PATH}/{order_id}", params=params, auth=True)
+
+    def get_limits(self) -> dict:
+        """GET /account/limits: usage tier + read/write token buckets."""
+        return self.auth_get("/trade-api/v2/account/limits")
+
+    def get_endpoint_costs(self) -> dict:
+        """GET /account/endpoint_costs (public): non-default token costs."""
+        return self.public_get("/trade-api/v2/account/endpoint_costs")
+
+    def upgrade_usage_level(self) -> dict:
+        """POST /account/api_usage_level/upgrade (30 write tokens). Grants
+        Advanced once one of your last 100 orders was placed via the API."""
+        return self.request("POST", "/trade-api/v2/account/api_usage_level/upgrade", auth=True)
 
     def place_order(self, order: dict) -> dict:
         """Submit a live order via Create Order V2. Returns the V2 ack."""

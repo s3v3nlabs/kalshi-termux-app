@@ -1,4 +1,10 @@
-"""Independent read/write token-bucket rate limiter (ported from engine scraps)."""
+"""Request pacer + legacy per-client buckets.
+
+The real Kalshi budget (token costs, read/write/balance buckets sized from
+GET /account/limits) lives in ``app.kalshi.budget``. ``GlobalRateLimiter`` is a
+request-count pacer used as a last-resort cap; ``TokenBucketManager`` is kept
+for backwards compatibility only.
+"""
 from __future__ import annotations
 
 import threading
@@ -9,7 +15,8 @@ GLOBAL_RATE_PER_SEC = 8.0
 
 
 class GlobalRateLimiter:
-    """Hard cap on all Kalshi requests: 8 per second, burst of 8."""
+    """Request-count cap (default 8/s, burst = rate). The shared budget's pacer
+    uses KALSHI_MAX_RPS instead; token budgets are the main limit."""
 
     def __init__(self, rate: float = GLOBAL_RATE_PER_SEC, clock=time.monotonic, sleep=time.sleep):
         self.rate = float(rate)
@@ -20,16 +27,18 @@ class GlobalRateLimiter:
         self._last = clock()
         self._lock = threading.Lock()
 
+    def reserve(self) -> float:
+        """Take one slot now; return seconds to wait (reservation, FIFO-ish)."""
+        with self._lock:
+            now = self._clock()
+            self.tokens = min(self.capacity, self.tokens + (now - self._last) * self.rate)
+            self._last = now
+            self.tokens -= 1.0
+            return 0.0 if self.tokens >= 0 else -self.tokens / self.rate
+
     def acquire(self) -> None:
-        while True:
-            with self._lock:
-                now = self._clock()
-                self.tokens = min(self.capacity, self.tokens + (now - self._last) * self.rate)
-                self._last = now
-                if self.tokens >= 1.0:
-                    self.tokens -= 1.0
-                    return
-                wait = (1.0 - self.tokens) / self.rate
+        wait = self.reserve()
+        if wait > 0:
             self._sleep(wait)
 
 
