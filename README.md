@@ -22,7 +22,7 @@ pkg update -y
 pkg install -y python git python-cryptography
 pkg install -y rust maturin binutils
 export ANDROID_API_LEVEL=24
-git clone https://github.com/singular-ty/kalshi-termux-app.git
+git clone https://github.com/s3v3nlabs/kalshi-termux-app.git
 cd kalshi-termux-app
 python -m venv --system-site-packages .venv
 source .venv/bin/activate
