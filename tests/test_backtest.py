@@ -63,3 +63,16 @@ def test_backtest_endpoints_use_fixture_without_history(monkeypatch, tmp_path):
     assert data["source"].startswith("fixture")
     assert set(data) >= {"current", "proposed", "gate_pass"}
     assert http.post("/backtest/promote").status_code == 400
+
+
+def test_promote_refuses_fixture_source():
+    """UI screen 6: Promote must not write weights when only the fixture is available."""
+    from fastapi.testclient import TestClient
+
+    import app.main as main
+
+    http = TestClient(main.app)
+    report = http.get("/backtest").json()
+    if report["source"] == "ledger":
+        return  # a real ledger exists on this box; the fixture guard is not exercised
+    assert http.post("/backtest/promote").status_code == 400

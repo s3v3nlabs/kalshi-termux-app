@@ -428,3 +428,13 @@ body.live-armed::after {
 .buy-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(1); }
 .c-buy[title] { cursor: not-allowed; }
 .geo-note { color: var(--red); font-weight: 600; margin: 8px 0; }
+
+/* ---------- Operator console: backtest ---------- */
+.bt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.bt-col h3 { margin: 0 0 8px; }
+.bt-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 8px; }
+.bt-metrics div { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+.bt-metrics small { color: var(--muted); font-size: 0.66rem; text-transform: uppercase; }
+.bt-metrics b { font-family: var(--mono); font-size: 1.1rem; }
+.bt-metrics b.better, .bt-metrics b.pos, small.pos { color: var(--green); }
+.bt-metrics b.worse, .bt-metrics b.neg, small.neg { color: var(--red); }

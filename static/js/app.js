@@ -836,6 +836,84 @@ $("#bets-outcome").addEventListener("change", renderBets);
 $("#bets-ticker").addEventListener("input", renderBets);
 $$('#nav button[data-panel="bets"]').forEach((b) => b.addEventListener("click", refreshBets));
 
+/* ---------- Backtest (operator console, screen 6) ---------- */
+let lastBacktest = null;
+
+function money(v) {
+  if (v == null) return "—";
+  return (v < 0 ? "−$" : "$") + Math.abs(Number(v)).toFixed(2);
+}
+
+function btColumn(label, side, other) {
+  const r = side.report || {};
+  const pnl = r.pnl || {};
+  const better = (a, b, lowerIsBetter) =>
+    a == null || b == null || a === b ? "" : (lowerIsBetter ? a < b : a > b) ? "better" : "worse";
+  const wrows = Object.keys(side.weights || {})
+    .sort()
+    .map((k) => {
+      const v = Number(side.weights[k]);
+      const o = other && other.weights ? Number(other.weights[k]) : null;
+      const d = o == null || label === "Current" ? "" : `<small class="${v - o >= 0 ? "pos" : "neg"}">${v - o >= 0 ? "+" : ""}${(v - o).toFixed(3)}</small>`;
+      return `<tr><td>${k}</td><td>${v.toFixed(4)}</td><td>${d}</td></tr>`;
+    })
+    .join("");
+  const o = (other && other.report) || {};
+  return `<div class="card bt-col">
+    <h3>${label} weights</h3>
+    <div class="bt-metrics">
+      <div><small>Brier</small><b class="${label === "Proposed" ? better(r.brier, o.brier, true) : ""}">${r.brier ?? "—"}</b></div>
+      <div><small>Hit rate</small><b class="${label === "Proposed" ? better(r.hit_rate, o.hit_rate, false) : ""}">${
+        r.hit_rate == null ? "—" : (r.hit_rate * 100).toFixed(1) + "%"
+      }</b></div>
+      <div><small>P&amp;L @ ½ Kelly</small><b class="${(pnl.total || 0) < 0 ? "neg" : "pos"}">${money(pnl.total)}</b></div>
+      <div><small>Bets / wins</small><b>${pnl.bets ?? 0} / ${pnl.wins ?? 0}</b></div>
+    </div>
+    <svg class="spark" viewBox="0 0 300 60" preserveAspectRatio="none">${sparkSvg(pnl.curve || [])}</svg>
+    <table class="feat-table"><thead><tr><th>weight</th><th>value</th><th>Δ</th></tr></thead><tbody>${wrows}</tbody></table>
+    <details class="muted"><summary>Hit rate by bucket</summary>
+      <div class="calib-table">${(r.buckets || [])
+        .filter((b) => b.n)
+        .map(
+          (b) => `<div class="cb"><span>${b.bucket}%</span><span>n ${b.n}</span><span>hit ${(b.hit_rate * 100).toFixed(0)}%</span><span>act ${(
+            b.actual * 100
+          ).toFixed(0)}%</span></div>`
+        )
+        .join("")}</div>
+    </details>
+  </div>`;
+}
+
+async function runBacktest() {
+  $("#bt-meta").textContent = "Running…";
+  try {
+    const r = await api("/backtest");
+    lastBacktest = r;
+    const n = (r.current && r.current.report && r.current.report.n) || 0;
+    const fixture = r.source !== "ledger";
+    $("#bt-meta").textContent = `${n} rows from ${fixture ? "the test fixture (no settled history yet)" : "your settled bets"} · gate ${
+      r.gate_pass ? "PASS" : "FAIL"
+    }${fixture ? " · Promote is off until you have real settled bets" : ""}`;
+    $("#bt-grid").innerHTML = btColumn("Current", r.current, r.proposed) + btColumn("Proposed", r.proposed, r.current);
+    const promote = $("#btn-promote");
+    promote.disabled = !(r.gate_pass && !fixture);
+    promote.title = fixture ? "Needs settled bets, not the fixture" : r.gate_pass ? "Write proposed weights to data/model_weights.json" : "Gate failed: Brier would get worse";
+  } catch (e) {
+    $("#bt-meta").textContent = "Error: " + e.message;
+  }
+}
+$("#btn-backtest").addEventListener("click", runBacktest);
+$("#btn-promote").addEventListener("click", async () => {
+  if (!lastBacktest || !confirm("Write the proposed weights? The scanner uses them from the next scan.")) return;
+  try {
+    const r = await api("/backtest/promote", { method: "POST" });
+    toast(`Promoted weights v${r.version} (Brier ${r.brier_before} → ${r.brier_after})`);
+    runBacktest();
+  } catch (e) {
+    toast("Not promoted: " + e.message);
+  }
+});
+
 /* ---------- bet form ---------- */
 
 function setSide(side) {

@@ -59,6 +59,7 @@
       <button data-panel="scanner" class="active" type="button"><span class="nav-ico" aria-hidden="true">📈</span><span>Markets</span></button>
       <button data-panel="calibration" type="button"><span class="nav-ico" aria-hidden="true">🎚️</span><span>Calib</span></button>
       <button data-panel="bets" type="button"><span class="nav-ico" aria-hidden="true">📒</span><span>Bets</span></button>
+      <button data-panel="backtest" type="button"><span class="nav-ico" aria-hidden="true">🧪</span><span>Backtest</span></button>
       <button data-panel="contract" type="button"><span class="nav-ico" aria-hidden="true">🎯</span><span>Bet</span></button>
       <button data-panel="nash" type="button"><span class="nav-ico" aria-hidden="true">🧮</span><span>Kelly</span></button>
       <button data-panel="account" type="button"><span class="nav-ico" aria-hidden="true">💼</span><span>Account</span></button>
@@ -151,6 +152,20 @@
         <p class="muted" id="bets-meta"></p>
       </div>
       <div id="bets-list" class="bets-list"></div>
+    </section>
+
+    <!-- BACKTEST -->
+    <section class="panel" id="panel-backtest">
+      <div class="card">
+        <h2>Backtest · the gate for new weights</h2>
+        <p class="muted">Replays settled history (or the test fixture if there is none) with the current weights and a refit. No live calls. Promote only writes weights when the refit's Brier is no worse.</p>
+        <div class="row" style="margin-top:10px">
+          <button class="btn big" id="btn-backtest" type="button">Run backtest</button>
+          <button class="btn danger" id="btn-promote" type="button" disabled>Promote proposed weights</button>
+        </div>
+        <p class="muted" id="bt-meta">Not run yet.</p>
+      </div>
+      <div class="bt-grid" id="bt-grid"></div>
     </section>
 
     <!-- CONTRACT -->
