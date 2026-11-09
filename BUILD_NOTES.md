@@ -122,3 +122,11 @@ Decisions below are the simplest option that meets each item; revisit if needed.
 - Weights: defaults ship in `app/strategy/model_weights.json`; refits write `data/model_weights.json` (gitignored), which wins when present.
 - Refit: full-batch gradient descent on mean log-loss, lr 0.01, 200 epochs, L2 0.001 (bias not penalised). Training rows = settled bets joined to the latest `model_runs` row for that ticker at bet time; label = YES outcome. Runs at most weekly, triggered after a settle. Needs ≥ 5 settled samples; a skipped refit is logged but does not start the 7-day clock. Every refit is logged (Python logger `kalshi.model`, activity log, and `refit_log` in the weights file, last 52 kept).
 - lr 0.01 × 200 epochs moves weights slowly per refit; that is the spec's setting.
+
+### 4. Backtest (`backtest.py`, `tests/fixtures/backtest_fixture.json`)
+
+- Replays stored `model_runs` against stored outcomes: one row per ticker with a settled bet, using the latest model run at or before the first settled bet on it (so each market counts once). Each run is **re-scored with the weight set under test** from its stored features, so different weights can be compared on the same history. No live calls.
+- Reports Brier, overall hit rate, hit rate/predicted/actual per bucket, and simulated P&L at 0.5 Kelly (fixed $1,000 bankroll, no compounding, 5% cap, buys whichever side has positive model edge vs the stored ask).
+- Gate: `gate(candidate, baseline)` passes only if Brier is not worse. `python backtest.py --propose` fits proposed weights and exits 1 if they fail the gate. `POST /backtest/promote` writes `data/model_weights.json` only when the gate passes and real ledger history exists.
+- **No real history yet**, so a 40-row synthetic fixture (seeded RNG, book-implied outcomes) lets the gate run in tests and `GET /backtest` falls back to it, labelled `source: fixture`. Promote refuses to write fixture-fitted weights.
+- Fixture result (Nov 8 2026): current weights (all 0.1) Brier 0.2239, hit 70.0%, sim P&L −$900.80 over 39 bets; one proposed refit Brier 0.1735, hit 77.5%, sim P&L −$488.61; gate passes. The negative P&L is the honest result of a model still flatter than the market on data where the market is right; it is not tuned.

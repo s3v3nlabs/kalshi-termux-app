@@ -326,6 +326,60 @@ def calibration():
     return ledger.calibration_sync()
 
 
+# ---------- backtest (offline replay, no live calls) ----------
+
+def _backtest_rows():
+    import backtest as bt
+
+    rows = bt.load_ledger_dataset(ledger)
+    source = "ledger"
+    if not rows:
+        rows = bt.load_fixture(ROOT / "tests" / "fixtures" / "backtest_fixture.json")
+        source = "fixture (no settled history yet)"
+    return bt, rows, source
+
+
+@app.get("/backtest")
+def backtest_report():
+    """Current vs proposed (refit) weights on stored history; fixture if none."""
+    from app.strategy.model import load_model
+
+    bt, rows, source = _backtest_rows()
+    result = bt.compare(rows, load_model()["weights"])
+    result["source"] = source
+    return result
+
+
+@app.post("/backtest/promote")
+def backtest_promote():
+    """Write the proposed weights to data/model_weights.json if the gate passes."""
+    from datetime import datetime, timezone
+
+    from app.strategy.model import load_model, save_model
+
+    bt, rows, source = _backtest_rows()
+    if source != "ledger":
+        raise HTTPException(400, "No settled history yet. The fixture is for testing the gate, not for promoting weights.")
+    doc = load_model()
+    result = bt.compare(rows, doc["weights"])
+    if not result["gate_pass"]:
+        raise HTTPException(409, "Proposed weights make the backtest Brier worse. Not promoted.")
+    doc["weights"] = result["proposed"]["weights"]
+    doc["version"] = int(doc.get("version") or 0) + 1
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "promoted": True,
+        "brier_before": result["current"]["report"]["brier"],
+        "brier_after": result["proposed"]["report"]["brier"],
+        "version": doc["version"],
+        "weights": doc["weights"],
+    }
+    doc.setdefault("refit_log", []).append(record)
+    path = save_model(doc)
+    store.log_activity("model", f"Promoted weights v{doc['version']} from backtest", record)
+    return {"ok": True, "path": str(path.relative_to(ROOT)), **record}
+
+
 # ---------- bets ledger ----------
 
 class SettleBody(BaseModel):

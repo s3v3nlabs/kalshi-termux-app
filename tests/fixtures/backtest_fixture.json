@@ -1,0 +1,565 @@
+{
+ "note": "Synthetic fixture for the backtest gate. Not real market data.",
+ "rows": [
+  {
+   "ticker": "FIX-00",
+   "features": {
+    "market_edge": -0.619039,
+    "time_to_close": 0.395,
+    "volume_z": -0.903,
+    "espn_delta": 0.0,
+    "spread_z": 0.696,
+    "market_p_yes": 0.35,
+    "yes_ask": 0.36,
+    "no_ask": 0.66
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-01",
+   "features": {
+    "market_edge": -1.734601,
+    "time_to_close": 0.058,
+    "volume_z": 0.015,
+    "espn_delta": 0.0,
+    "spread_z": -0.636,
+    "market_p_yes": 0.15,
+    "yes_ask": 0.16,
+    "no_ask": 0.86
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-02",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.241,
+    "volume_z": 0.102,
+    "espn_delta": 0.0,
+    "spread_z": -0.6,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-03",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.223,
+    "volume_z": 0.255,
+    "espn_delta": 0.0,
+    "spread_z": 0.911,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-04",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.05,
+    "volume_z": -0.558,
+    "espn_delta": 0.0,
+    "spread_z": 0.246,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-05",
+   "features": {
+    "market_edge": -1.098612,
+    "time_to_close": 0.144,
+    "volume_z": -0.764,
+    "espn_delta": 0.0,
+    "spread_z": -0.176,
+    "market_p_yes": 0.25,
+    "yes_ask": 0.26,
+    "no_ask": 0.76
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-06",
+   "features": {
+    "market_edge": 1.734601,
+    "time_to_close": 0.103,
+    "volume_z": 0.142,
+    "espn_delta": 0.0,
+    "spread_z": -0.381,
+    "market_p_yes": 0.85,
+    "yes_ask": 0.86,
+    "no_ask": 0.16
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-07",
+   "features": {
+    "market_edge": -1.734601,
+    "time_to_close": 0.063,
+    "volume_z": -0.881,
+    "espn_delta": 0.0,
+    "spread_z": -0.35,
+    "market_p_yes": 0.15,
+    "yes_ask": 0.16,
+    "no_ask": 0.86
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-08",
+   "features": {
+    "market_edge": 1.098612,
+    "time_to_close": 0.777,
+    "volume_z": -0.069,
+    "espn_delta": 0.0,
+    "spread_z": 0.87,
+    "market_p_yes": 0.75,
+    "yes_ask": 0.76,
+    "no_ask": 0.26
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-09",
+   "features": {
+    "market_edge": -0.619039,
+    "time_to_close": 0.794,
+    "volume_z": 0.398,
+    "espn_delta": 0.0,
+    "spread_z": -0.285,
+    "market_p_yes": 0.35,
+    "yes_ask": 0.36,
+    "no_ask": 0.66
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-10",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.495,
+    "volume_z": -0.313,
+    "espn_delta": 0.0,
+    "spread_z": 0.063,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-11",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.118,
+    "volume_z": -0.164,
+    "espn_delta": 0.0,
+    "spread_z": 0.587,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-12",
+   "features": {
+    "market_edge": -1.098612,
+    "time_to_close": 0.422,
+    "volume_z": 0.924,
+    "espn_delta": 0.0,
+    "spread_z": -0.568,
+    "market_p_yes": 0.25,
+    "yes_ask": 0.26,
+    "no_ask": 0.76
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-13",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.875,
+    "volume_z": -0.373,
+    "espn_delta": 0.0,
+    "spread_z": 0.482,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-14",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.797,
+    "volume_z": -0.862,
+    "espn_delta": 0.0,
+    "spread_z": -0.541,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-15",
+   "features": {
+    "market_edge": -0.619039,
+    "time_to_close": 0.664,
+    "volume_z": -0.879,
+    "espn_delta": 0.0,
+    "spread_z": 0.493,
+    "market_p_yes": 0.35,
+    "yes_ask": 0.36,
+    "no_ask": 0.66
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-16",
+   "features": {
+    "market_edge": 1.098612,
+    "time_to_close": 0.681,
+    "volume_z": -0.109,
+    "espn_delta": 0.0,
+    "spread_z": 0.518,
+    "market_p_yes": 0.75,
+    "yes_ask": 0.76,
+    "no_ask": 0.26
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-17",
+   "features": {
+    "market_edge": 1.098612,
+    "time_to_close": 0.941,
+    "volume_z": -0.289,
+    "espn_delta": 0.0,
+    "spread_z": 0.339,
+    "market_p_yes": 0.75,
+    "yes_ask": 0.76,
+    "no_ask": 0.26
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-18",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.768,
+    "volume_z": -0.741,
+    "espn_delta": 0.0,
+    "spread_z": -0.279,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-19",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.497,
+    "volume_z": -0.667,
+    "espn_delta": 0.0,
+    "spread_z": -0.017,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-20",
+   "features": {
+    "market_edge": -0.619039,
+    "time_to_close": 0.819,
+    "volume_z": 0.728,
+    "espn_delta": 0.0,
+    "spread_z": -0.227,
+    "market_p_yes": 0.35,
+    "yes_ask": 0.36,
+    "no_ask": 0.66
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-21",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.683,
+    "volume_z": -0.239,
+    "espn_delta": 0.0,
+    "spread_z": -0.308,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-22",
+   "features": {
+    "market_edge": -1.734601,
+    "time_to_close": 0.232,
+    "volume_z": -0.533,
+    "espn_delta": 0.0,
+    "spread_z": 0.124,
+    "market_p_yes": 0.15,
+    "yes_ask": 0.16,
+    "no_ask": 0.86
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-23",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.282,
+    "volume_z": -0.709,
+    "espn_delta": 0.0,
+    "spread_z": 0.209,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-24",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.953,
+    "volume_z": 0.381,
+    "espn_delta": 0.0,
+    "spread_z": 0.176,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-25",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.74,
+    "volume_z": -0.087,
+    "espn_delta": 0.0,
+    "spread_z": 0.781,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-26",
+   "features": {
+    "market_edge": 1.734601,
+    "time_to_close": 0.559,
+    "volume_z": -0.204,
+    "espn_delta": 0.0,
+    "spread_z": -0.03,
+    "market_p_yes": 0.85,
+    "yes_ask": 0.86,
+    "no_ask": 0.16
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-27",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.062,
+    "volume_z": -0.865,
+    "espn_delta": 0.0,
+    "spread_z": -0.345,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-28",
+   "features": {
+    "market_edge": -1.098612,
+    "time_to_close": 0.601,
+    "volume_z": -0.795,
+    "espn_delta": 0.0,
+    "spread_z": 0.264,
+    "market_p_yes": 0.25,
+    "yes_ask": 0.26,
+    "no_ask": 0.76
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-29",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.364,
+    "volume_z": -0.949,
+    "espn_delta": 0.0,
+    "spread_z": 0.786,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-30",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.634,
+    "volume_z": 0.911,
+    "espn_delta": 0.0,
+    "spread_z": 0.324,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-31",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.849,
+    "volume_z": 0.986,
+    "espn_delta": 0.0,
+    "spread_z": 0.092,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-32",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.144,
+    "volume_z": 0.499,
+    "espn_delta": 0.0,
+    "spread_z": 0.559,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-33",
+   "features": {
+    "market_edge": 0.0,
+    "time_to_close": 0.161,
+    "volume_z": -0.954,
+    "espn_delta": 0.0,
+    "spread_z": 0.917,
+    "market_p_yes": 0.5,
+    "yes_ask": 0.51,
+    "no_ask": 0.51
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-34",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.69,
+    "volume_z": 0.828,
+    "espn_delta": 0.0,
+    "spread_z": 0.589,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-35",
+   "features": {
+    "market_edge": -0.619039,
+    "time_to_close": 0.863,
+    "volume_z": 0.392,
+    "espn_delta": 0.0,
+    "spread_z": -0.256,
+    "market_p_yes": 0.35,
+    "yes_ask": 0.36,
+    "no_ask": 0.66
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-36",
+   "features": {
+    "market_edge": -0.619039,
+    "time_to_close": 0.356,
+    "volume_z": -0.554,
+    "espn_delta": 0.0,
+    "spread_z": 0.221,
+    "market_p_yes": 0.35,
+    "yes_ask": 0.36,
+    "no_ask": 0.66
+   },
+   "yes_outcome": 0
+  },
+  {
+   "ticker": "FIX-37",
+   "features": {
+    "market_edge": 0.619039,
+    "time_to_close": 0.223,
+    "volume_z": 0.623,
+    "espn_delta": 0.0,
+    "spread_z": 0.974,
+    "market_p_yes": 0.65,
+    "yes_ask": 0.66,
+    "no_ask": 0.36
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-38",
+   "features": {
+    "market_edge": 1.734601,
+    "time_to_close": 0.239,
+    "volume_z": -0.199,
+    "espn_delta": 0.0,
+    "spread_z": 0.666,
+    "market_p_yes": 0.85,
+    "yes_ask": 0.86,
+    "no_ask": 0.16
+   },
+   "yes_outcome": 1
+  },
+  {
+   "ticker": "FIX-39",
+   "features": {
+    "market_edge": -1.098612,
+    "time_to_close": 0.356,
+    "volume_z": -0.942,
+    "espn_delta": 0.0,
+    "spread_z": -0.653,
+    "market_p_yes": 0.25,
+    "yes_ask": 0.26,
+    "no_ask": 0.76
+   },
+   "yes_outcome": 0
+  }
+ ]
+}
