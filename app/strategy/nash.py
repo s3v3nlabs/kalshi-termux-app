@@ -5,6 +5,7 @@ Treats YOU vs MARKET as a zero-sum-ish payoff over BUY YES / BUY NO / PASS.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Literal
 
@@ -145,3 +146,83 @@ def nash_decision(
 
 def nash_to_dict(result: NashResult) -> dict:
     return asdict(result)
+
+
+# ---------------------------------------------------------------------------
+# Second solver: multi-agent softmax (logit quantal-response) equilibrium.
+# ---------------------------------------------------------------------------
+
+def softmax_equilibrium(
+    markets: list[dict],
+    temperature: float = 0.1,
+    steps: int = 2000,
+    eta: float = 0.05,
+    tol: float = 1e-7,
+) -> dict[str, float]:
+    """Equilibrium YES price per market for two kinds of agents.
+
+    Each market dict needs ``ticker``, ``model_p`` (model P(YES)),
+    ``market_p`` (book P(YES)) and ``volume``.
+
+    * One **informed** agent with 1 unit of capital spread over every
+      market: it picks among BUY_YES_i, BUY_NO_i and PASS with softmax
+      probabilities over expected value / temperature, using model_p.
+    * One **book** agent per market with capital equal to that market's
+      volume share: same softmax choice over its own market, using market_p.
+
+    Net YES demand moves each price: q_i += eta * (yes_i - no_i). At the
+    fixed point the informed and book flows cancel, so liquid markets stay
+    near the book and thin ones lean toward the model. Returns
+    ``{ticker: nash_prob}``. Deterministic; no randomness.
+    """
+    if not markets:
+        return {}
+    t = max(1e-6, float(temperature))
+    p = [_clamp(float(m["model_p"])) for m in markets]
+    b = [_clamp(float(m["market_p"])) for m in markets]
+    vol = [max(0.0, float(m.get("volume") or 0.0)) for m in markets]
+    total = sum(vol)
+    share = [v / total if total > 0 else 1.0 / len(markets) for v in vol]
+    q = list(b)
+    n = len(markets)
+    for _ in range(steps):
+        # Informed agent: one softmax over 2n + 1 actions (PASS has EV 0).
+        logits = []
+        for i in range(n):
+            logits.append((p[i] - q[i]) / t)  # BUY_YES_i
+            logits.append((q[i] - p[i]) / t)  # BUY_NO_i
+        logits.append(0.0)  # PASS
+        mx = max(logits)
+        ex = [math.exp(x - mx) for x in logits]
+        z = sum(ex)
+        moved = 0.0
+        for i in range(n):
+            inf_yes, inf_no = ex[2 * i] / z, ex[2 * i + 1] / z
+            # Book agent for market i: softmax over its own YES/NO/PASS.
+            by, bn = (b[i] - q[i]) / t, (q[i] - b[i]) / t
+            m2 = max(by, bn, 0.0)
+            ey, en, ep = math.exp(by - m2), math.exp(bn - m2), math.exp(-m2)
+            zb = ey + en + ep
+            demand = (inf_yes - inf_no) + share[i] * n * (ey - en) / zb
+            new_q = _clamp(q[i] + eta * demand)
+            moved = max(moved, abs(new_q - q[i]))
+            q[i] = new_q
+        if moved < tol:
+            break
+    return {m["ticker"]: round(q[i], 6) for i, m in enumerate(markets)}
+
+
+def mispricing_scores(rows: list[dict], top_n: int = 10, temperature: float = 0.1) -> dict[str, dict]:
+    """Run the equilibrium over the top ``top_n`` rows by volume.
+
+    Each row needs ``ticker``, ``volume``, ``model_p`` and ``market_p``.
+    Returns ``{ticker: {nash_prob, mispricing}}`` where
+    mispricing = |nash_prob - market_prob|.
+    """
+    top = sorted(rows, key=lambda r: float(r.get("volume") or 0.0), reverse=True)[:top_n]
+    eq = softmax_equilibrium(top, temperature=temperature)
+    out = {}
+    for r in top:
+        q = eq[r["ticker"]]
+        out[r["ticker"]] = {"nash_prob": q, "mispricing": round(abs(q - float(r["market_p"])), 6)}
+    return out

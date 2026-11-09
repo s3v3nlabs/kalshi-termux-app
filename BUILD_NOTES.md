@@ -130,3 +130,10 @@ Decisions below are the simplest option that meets each item; revisit if needed.
 - Gate: `gate(candidate, baseline)` passes only if Brier is not worse. `python backtest.py --propose` fits proposed weights and exits 1 if they fail the gate. `POST /backtest/promote` writes `data/model_weights.json` only when the gate passes and real ledger history exists.
 - **No real history yet**, so a 40-row synthetic fixture (seeded RNG, book-implied outcomes) lets the gate run in tests and `GET /backtest` falls back to it, labelled `source: fixture`. Promote refuses to write fixture-fitted weights.
 - Fixture result (Nov 8 2026): current weights (all 0.1) Brier 0.2239, hit 70.0%, sim P&L −$900.80 over 39 bets; one proposed refit Brier 0.1735, hit 77.5%, sim P&L −$488.61; gate passes. The negative P&L is the honest result of a model still flatter than the market on data where the market is right; it is not tuned.
+
+### 5. Nash fix (`app/strategy/nash.py`)
+
+- The 2-player payoff matrix (`nash_decision`) is kept. New `softmax_equilibrium` / `mispricing_scores`: a logit quantal-response equilibrium at temperature 0.1 over the **top 10 scanned markets by volume**. Agents: one informed agent (model P) with one softmax over every BUY_YES_i / BUY_NO_i / PASS, plus one book agent per market (book P) weighted by that market's volume share. Net YES demand moves each price until flows cancel, so liquid markets stay near the book and thin ones lean to the model. Deterministic.
+- `mispricing = |nash_prob − market_prob|` (market_prob = book mid). Rows outside the top 10 get `nash_prob`/`mispricing` = null.
+- **Scanner default sort is now `mispricing`** (scored rows first, biggest mispricing first, the rest in payout order). This replaces the earlier "highest payout first" default because the Architect plan says to rank by mispricing; `sort=payout` and `sort=score` still work. `GET /scanner` = scan ranked by mispricing.
+- Backtest gate: item 5 does not change model probabilities, so fixture Brier is unchanged (0.223942).

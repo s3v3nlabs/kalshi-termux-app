@@ -154,11 +154,11 @@ def api_scan(
     limit: int = 100,
     bankroll: float = 1000.0,
     refresh: bool = False,
-    sort: str = "payout",
+    sort: str = "mispricing",
 ):
-    sort_mode = (sort or "payout").strip().lower()
-    if sort_mode not in {"payout", "score"}:
-        sort_mode = "payout"
+    sort_mode = (sort or "mispricing").strip().lower()
+    if sort_mode not in {"mispricing", "payout", "score"}:
+        sort_mode = "mispricing"
     cache_key = f"scan:{limit}:{bankroll}:{sort_mode}"
     if not refresh:
         cached = store.cache_get(cache_key)
@@ -185,6 +185,12 @@ def api_scan(
         f"Scanned {result['scanned']} markets → {result['count']} enriched via {result['host']}",
     )
     return result
+
+
+@app.get("/scanner")
+def scanner(limit: int = 100, bankroll: float = 1000.0, refresh: bool = False):
+    """Scanner ranked by softmax-equilibrium mispricing score."""
+    return api_scan(limit=limit, bankroll=bankroll, refresh=refresh, sort="mispricing")
 
 
 @app.get("/api/markets/{ticker}")

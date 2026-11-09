@@ -464,7 +464,7 @@ def test_scan_merges_game_series_without_network(monkeypatch):
                 )
             return None
 
-    result = scan_opportunities(client=Client(), limit=10, espn=Board(), bankroll=1000)
+    result = scan_opportunities(client=Client(), limit=10, espn=Board(), bankroll=1000, sort="payout")
     by_ticker = {row["ticker"]: row for row in result["markets"]}
     assert by_ticker["KXNFLGAME-26SEP24ATLGB-GB"]["prob_source"] == "espn_live"
     assert by_ticker["KXTEST-CHEAP"]["prob_source"] == "market_shrink"

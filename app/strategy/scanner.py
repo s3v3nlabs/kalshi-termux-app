@@ -15,7 +15,12 @@ from app.strategy.espn import (
 )
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds, kelly_size
 from app.strategy.model import build_features, load_model, predict
-from app.strategy.nash import nash_decision, nash_to_dict
+from app.strategy.nash import mispricing_scores, nash_decision, nash_to_dict
+
+# Softmax-equilibrium solver settings (item 5).
+NASH_TOP_N = 10
+NASH_TEMPERATURE = 0.1
+SORT_MODES = {"mispricing", "payout", "score"}
 
 # GO if Gemini Nash payoff clears this. Heuristic only — not a win guarantee.
 NASH_GO_THRESHOLD = 0.4
@@ -178,6 +183,18 @@ def sort_scan_rows(rows: list[dict], sort: str = "payout") -> list[dict]:
     that ask for it. Default is payout.
     """
     mode = (sort or "payout").strip().lower()
+    if mode == "mispricing":
+        # Equilibrium rows (top markets by volume) first, largest mispricing
+        # first; the rest keep payout order behind them.
+        rows.sort(
+            key=lambda r: (
+                r.get("mispricing") is not None,
+                float(r.get("mispricing") or 0.0),
+                float(r.get("best_payout_multiple") or 0.0),
+            ),
+            reverse=True,
+        )
+        return rows
 
     def _ev(row: dict) -> float:
         return float((row.get("kelly") or {}).get("expected_value_per_contract") or 0.0)
@@ -475,7 +492,7 @@ def scan_opportunities(
     limit: Optional[int] = None,
     bankroll: float = 1000.0,
     only_actionable: bool = False,
-    sort: str = "payout",
+    sort: str = "mispricing",
     espn: Optional[EspnBoard] = None,
     include_game_series: bool = True,
     calibration: Optional[dict] = None,
@@ -535,9 +552,28 @@ def scan_opportunities(
     espn_stats["fetch_ok"] = board.fetch_ok
     espn_stats["fetch_errors"] = board.fetch_errors
 
-    sort_mode = (sort or "payout").strip().lower()
-    if sort_mode not in {"payout", "score"}:
-        sort_mode = "payout"
+    # Item 5: softmax equilibrium over the top markets by volume.
+    eq = mispricing_scores(
+        [
+            {
+                "ticker": r["ticker"],
+                "volume": r.get("volume") or 0.0,
+                "model_p": r["model"]["p_yes"],
+                "market_p": r["model"]["market_p_yes"],
+            }
+            for r in enriched
+        ],
+        top_n=NASH_TOP_N,
+        temperature=NASH_TEMPERATURE,
+    )
+    for r in enriched:
+        hit = eq.get(r["ticker"])
+        r["nash_prob"] = hit["nash_prob"] if hit else None
+        r["mispricing"] = hit["mispricing"] if hit else None
+
+    sort_mode = (sort or "mispricing").strip().lower()
+    if sort_mode not in SORT_MODES:
+        sort_mode = "mispricing"
     sort_scan_rows(enriched, sort_mode)
     now = datetime.now(timezone.utc).isoformat()
     return {
