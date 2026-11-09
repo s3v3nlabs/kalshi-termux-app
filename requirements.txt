@@ -10,3 +10,4 @@ tzdata>=2024.1
 aiosqlite>=0.20.0
 # Async Kalshi client (pure Python; also pulled in by FastAPI's TestClient)
 httpx>=0.27.0
+websockets>=13.0

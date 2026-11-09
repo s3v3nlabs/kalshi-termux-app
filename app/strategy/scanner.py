@@ -1,6 +1,8 @@
 """Scan open Kalshi markets for high-payout / mispriced single contracts."""
 from __future__ import annotations
 
+import time
+
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -539,26 +541,10 @@ def model_run_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
-def scan_opportunities(
-    client: Optional[KalshiClient] = None,
-    limit: Optional[int] = None,
-    bankroll: float = 1000.0,
-    only_actionable: bool = False,
-    sort: str = "mispricing",
-    espn: Optional[EspnBoard] = None,
-    include_game_series: bool = True,
-    calibration: Optional[dict] = None,
-    analog_pool: Optional[list[dict]] = None,
-    context: Optional[ContextAdapters] = None,
-    use_context: bool = True,
-) -> dict:
-    """``analog_pool`` (``analogs.load_pool``) adds settled-analog stats per row.
+_RAW_CACHE: dict = {}
 
-    ``calibration`` is the ledger's /calibration payload. When it says the
-    model is uncalibrated (Brier > 0.25, or no settled bets yet) every row is
-    flagged and Kelly is halved."""
-    client = client or KalshiClient()
-    limit = limit or settings.scan_limit
+
+def _fetch_raw_markets(client, limit: int, include_game_series: bool) -> list[dict]:
     markets = []
     cursor = None
     pages = 0
@@ -579,6 +565,48 @@ def scan_opportunities(
     markets = markets[: max(limit * 2, limit)]  # allow filter headroom
     if include_game_series:
         markets = _merge_nearby_game_markets(client, markets)
+    return markets
+
+
+def scan_opportunities(
+    client: Optional[KalshiClient] = None,
+    limit: Optional[int] = None,
+    bankroll: float = 1000.0,
+    only_actionable: bool = False,
+    sort: str = "mispricing",
+    espn: Optional[EspnBoard] = None,
+    include_game_series: bool = True,
+    calibration: Optional[dict] = None,
+    analog_pool: Optional[list[dict]] = None,
+    context: Optional[ContextAdapters] = None,
+    use_context: bool = True,
+    quotes: Optional[Any] = None,
+    raw_ttl_s: float = 0.0,
+) -> dict:
+    """``analog_pool`` (``analogs.load_pool``) adds settled-analog stats per row.
+
+    ``calibration`` is the ledger's /calibration payload. When it says the
+    model is uncalibrated (Brier > 0.25, or no settled bets yet) every row is
+    flagged and Kelly is halved."""
+    client = client or KalshiClient()
+    limit = limit or settings.scan_limit
+    cache_key = (getattr(client, "host", ""), int(limit), bool(include_game_series))
+    cached = _RAW_CACHE.get(cache_key) if raw_ttl_s > 0 else None
+    if cached is not None and time.monotonic() - cached[0] <= raw_ttl_s:
+        # Live stream connected: reuse the market list; prices come from the
+        # pushed books/tickers below, so this scan makes no market-list calls.
+        markets = list(cached[1])
+        raw_from_cache = True
+    else:
+        markets = _fetch_raw_markets(client, limit, include_game_series)
+        _RAW_CACHE[cache_key] = (time.monotonic(), markets)
+        raw_from_cache = False
+    quote_counts = {"ws_book": 0, "ws_ticker": 0, "rest": 0}
+    if quotes is not None:
+        markets = [quotes.overlay(m) for m in markets]
+    for m in markets:
+        src = m.get("_quote_source") or "rest"
+        quote_counts[src] = quote_counts.get(src, 0) + 1
     board = espn if espn is not None else get_board()
     uncalibrated = True if calibration is None else bool(calibration.get("uncalibrated", True))
     model_doc = load_model()
@@ -608,6 +636,9 @@ def scan_opportunities(
             espn_stats[status] = espn_stats.get(status, 0) + 1
         else:
             espn_stats["fallback"] += 1
+        row["quote_source"] = m.get("_quote_source") or "rest"
+        if m.get("_quote_age_s") is not None:
+            row["quote_age_s"] = m["_quote_age_s"]
         enriched.append(row)
     # YES+NO sanity: one gem per event at most (highest Nash payoff stays).
     gems_suppressed = suppress_paired_gems(enriched)
@@ -660,6 +691,7 @@ def scan_opportunities(
             "No 100% win-rate claim. Risk of loss."
         ),
         "espn": espn_stats,
+        "quotes": {**quote_counts, "market_list_cached": raw_from_cache},
         "gems_suppressed": gems_suppressed,
         "context": _context_stats(enriched, ctx),
         "analog_pool_n": None if analog_pool is None else len(analog_pool),

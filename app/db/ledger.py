@@ -559,6 +559,15 @@ class Ledger:
         finally:
             await conn.close()
 
+    async def set_auto_order_status(self, order_log_id: int, status: str) -> int:
+        conn = await self._db()
+        try:
+            cur = await conn.execute("UPDATE auto_orders SET status=? WHERE order_log_id=?", (status, int(order_log_id)))
+            await conn.commit()
+            return cur.rowcount
+        finally:
+            await conn.close()
+
     async def auto_orders(self, since: Optional[str] = None, limit: int = 200) -> list[dict]:
         sql, args = "SELECT * FROM auto_orders", []
         if since:
@@ -596,6 +605,9 @@ class Ledger:
 
     def add_auto_order_sync(self, row):
         return run_sync(self.add_auto_order(row))
+
+    def set_auto_order_status_sync(self, order_log_id, status):
+        return run_sync(self.set_auto_order_status(order_log_id, status))
 
     def auto_orders_sync(self, since=None, limit=200):
         return run_sync(self.auto_orders(since, limit))

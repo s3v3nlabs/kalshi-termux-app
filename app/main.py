@@ -19,6 +19,8 @@ from app import geo
 from app.config import HOSTS, settings
 from app.db.ledger import Ledger, settle_open_bets
 from app.db.store import Store
+from app.kalshi.books import BookStore
+from app.kalshi.ws import MarketStream
 from app.kalshi.client import (
     MAX_CONTRACTS_PER_ORDER,
     KalshiClient,
@@ -77,6 +79,7 @@ async def _lifespan(_app):
     tasks = []
     if _background_enabled():
         tasks.append(asyncio.create_task(_budget_loop(), name="budget"))
+        tasks.append(asyncio.create_task(stream.run_forever(), name="stream"))
         tasks.append(asyncio.create_task(autobet.run_forever(), name="autobet"))
         tasks.append(asyncio.create_task(learner.run_forever(), name="learner"))
     try:
@@ -113,6 +116,24 @@ totp_mgr = TOTPManager(vault)
 client = KalshiClient()
 orders = OrderGate(store, client, ledger)
 
+# Live market data (WebSocket). Falls back to REST polling when not connected.
+books = BookStore()
+stream = MarketStream(books)
+stream.enabled = os.getenv("WS_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+WS_WATCH_SCAN_N = int(os.getenv("WS_WATCH_SCAN_N", "120") or 120)
+RAW_LIST_TTL_S = float(os.getenv("STREAM_LIST_TTL_S", "45") or 45)
+
+
+def _scan_feed_kwargs() -> dict:
+    """With the stream live, scans read pushed prices and reuse the market list."""
+    if stream.live:
+        return {"quotes": books, "raw_ttl_s": RAW_LIST_TTL_S}
+    return {}
+
+
+def _watch_scan_rows(rows: list) -> None:
+    stream.set_watch("scan", [r.get("ticker") for r in rows[:WS_WATCH_SCAN_N] if r.get("ticker")])
+
 
 def _auto_scan(bankroll: float) -> dict:
     """Scan for the auto-bet loop: same ranking, calibration and Kelly halving as /scanner."""
@@ -123,8 +144,10 @@ def _auto_scan(bankroll: float) -> dict:
     except Exception:
         calib = None
     result = scan_opportunities(
-        client, limit=settings.scan_limit, bankroll=bankroll, sort="mispricing", calibration=calib, analog_pool=load_pool(ledger)
+        client, limit=settings.scan_limit, bankroll=bankroll, sort="mispricing", calibration=calib,
+        analog_pool=load_pool(ledger), **_scan_feed_kwargs()
     )
+    _watch_scan_rows(result.get("markets") or [])
     try:
         ledger.add_model_snapshots_sync(model_run_rows(result.get("markets") or []))
     except Exception:
@@ -137,6 +160,34 @@ from app.trading.autobet import AutoBetEngine  # noqa: E402
 
 autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto_scan, client_fn=lambda: client)
 learner = Learner(ledger=ledger, store=store, client_fn=lambda: client)
+
+_LAST_ASK: dict[str, tuple] = {}
+
+
+def _on_stream_event(kind: str, msg: dict) -> None:
+    """Fills update the ledger; a watched market's price move wakes auto-bet
+    early (rate-limited)."""
+    if kind in {"fill", "user_order"}:
+        fn = orders.on_fill if kind == "fill" else orders.on_user_order
+        try:  # sqlite work off the event loop
+            asyncio.get_running_loop().run_in_executor(None, fn, msg)
+        except RuntimeError:
+            fn(msg)
+        return
+    if kind not in {"ticker", "book"}:
+        return
+    t = msg.get("ticker")
+    q = books.quote(t) if t else None
+    if not q:
+        return
+    key = (q.get("yes_ask"), q.get("no_ask"))
+    if _LAST_ASK.get(t) == key:
+        return
+    _LAST_ASK[t] = key
+    autobet.poke("price move")
+
+
+stream.on_event(_on_stream_event)
 
 # Session-ish flags (local process only)
 _app_unlocked = False
@@ -220,10 +271,17 @@ def api_status():
         "totp_configured": bool(vault.unlocked and totp_mgr.has_seed()),
         "skip_live_confirm": load_skip_live_confirm(store),
         "bucket": client.bucket.status(),
+        "stream": stream.status(),
         "exchange": ping,
         "exchange_error": err,
         "disclaimer": "Not financial advice. No guaranteed win rate. Risk of loss.",
     }
+
+
+@app.get("/api/stream")
+def api_stream():
+    """WebSocket feed status: live stream vs REST polling, books, seq gaps."""
+    return {"ok": True, **stream.status(), "watch_sample": stream.watch()[:20]}
 
 
 @app.get("/api/ping")
@@ -280,8 +338,10 @@ def api_scan(
         from app.strategy.analogs import load_pool
 
         result = scan_opportunities(
-            client, limit=limit, bankroll=bankroll, sort=sort_mode, calibration=calib, analog_pool=load_pool(ledger)
+            client, limit=limit, bankroll=bankroll, sort=sort_mode, calibration=calib, analog_pool=load_pool(ledger),
+            **_scan_feed_kwargs()
         )
+        _watch_scan_rows(result.get("markets") or [])
     except Exception as e:
         store.log_activity("error", f"Scan failed: {e}")
         raise HTTPException(502, str(e))

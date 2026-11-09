@@ -212,6 +212,9 @@ class AutoBetEngine:
         self.paper_bankroll = float(
             paper_bankroll if paper_bankroll is not None else _env_float("AUTOBET_PAPER_BANKROLL", 1000.0)
         )
+        self.min_gap_s = _env_float("AUTOBET_MIN_GAP_S", 10.0)
+        self._last_start_mono = 0.0
+        self.pokes = 0
         self._enabled = (store.get_setting(SETTING_KEY, "0") or "0") == "1"
         self._cycle_lock = threading.Lock()
         self._wake: Optional[asyncio.Event] = None
@@ -234,6 +237,20 @@ class AutoBetEngine:
             except RuntimeError:  # loop closed
                 pass
         return self.status()
+
+    def poke(self, reason: str = "stream") -> bool:
+        """Event-driven wake (live price move from the WebSocket). Thread-safe;
+        at most one early cycle per ``AUTOBET_MIN_GAP_S``. Returns True if woken."""
+        if not self._enabled or self._wake is None or self._loop is None:
+            return False
+        if time.monotonic() - self._last_start_mono < self.min_gap_s:
+            return False
+        self.pokes += 1
+        try:
+            self._loop.call_soon_threadsafe(self._wake.set)
+        except RuntimeError:
+            return False
+        return True
 
     def mode(self) -> str:
         if not self._enabled:
@@ -281,6 +298,7 @@ class AutoBetEngine:
         if not self._cycle_lock.acquire(blocking=False):
             return {"ran": False, "reason": "cycle already running"}
         started = datetime.now(timezone.utc)
+        self._last_start_mono = time.monotonic()
         summary: dict[str, Any] = {"ts": started.isoformat(), "ran": True, "placed": 0, "picked": 0, "orders": []}
         try:
             live = bool(self.orders.live_armed)
@@ -398,6 +416,8 @@ class AutoBetEngine:
             "mode": self.mode(),
             "trades_real_money": self._enabled and bool(self.orders.live_armed),
             "interval_s": self.interval_s,
+            "min_gap_s": self.min_gap_s,
+            "stream_wakes": self.pokes,
             "top_n": self.top_n,
             "paper_bankroll": self.paper_bankroll,
             "last_cycle": self.last_cycle,

@@ -1,6 +1,7 @@
 """Order gate. PAPER vs LIVE mode. LIVE sends real orders when Kalshi keys exist."""
 from __future__ import annotations
 
+import threading
 import uuid
 from typing import Any, Optional
 
@@ -15,6 +16,10 @@ class OrderGate:
         self.store = store
         self.client = client or KalshiClient()
         self.ledger = ledger
+        # Live orders still resting after the ack, by Kalshi order_id. Fills
+        # from the WebSocket fill stream are recorded against these.
+        self.resting: dict[str, dict] = {}
+        self._resting_lock = threading.Lock()
 
     def _record_fill(self, ticker: str, side: str, contracts: float, price: float, source: str = "manual") -> Optional[int]:
         """Write a bets row for a fill. Model prob = latest model run for the ticker."""
@@ -241,6 +246,17 @@ class OrderGate:
                 # V2 reports the YES-book price; a NO buyer paid 1 - that.
                 fill_px = round(1.0 - fill_px, 6)
             bet_id = self._record_fill(ticker, side, filled_n, fill_px, source=source)
+        try:
+            remaining_n = float(remaining or 0)
+        except (TypeError, ValueError):
+            remaining_n = 0.0
+        if order_id and remaining_n > 0:
+            with self._resting_lock:
+                self.resting[str(order_id)] = {
+                    "order_id": str(order_id), "ticker": ticker, "side": side, "source": source,
+                    "remaining": remaining_n, "filled": filled_n, "order_log_id": oid,
+                    "client_order_id": client_order_id, "price_cents": price_cents,
+                }
         msg = f"[LIVE] Sent BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢"
         if filled is not None:
             msg += f" · filled {filled}, resting {remaining}"
@@ -255,4 +271,66 @@ class OrderGate:
             "message": msg,
             "v2_request": v2_body,
             "bet_id": bet_id,
+            "order_id": order_id,
         }
+
+    # ----- fill stream (WebSocket warp-ws: fill / user_orders) -----
+
+    def on_fill(self, msg: dict) -> Optional[int]:
+        """A later fill on one of our resting live orders: record it as a bet."""
+        oid = str(msg.get("order_id") or "")
+        with self._resting_lock:
+            entry = self.resting.get(oid)
+            if entry is None:
+                return None
+            try:
+                n = float(msg.get("count_fp") or msg.get("count") or 0)
+                yes_px = float(msg.get("yes_price_dollars"))
+            except (TypeError, ValueError):
+                return None
+            entry["remaining"] = max(0.0, entry["remaining"] - n)
+            entry["filled"] = entry.get("filled", 0.0) + n
+            done = entry["remaining"] <= 0
+            if done:
+                self.resting.pop(oid, None)
+        px = yes_px if entry["side"] == "yes" else round(1.0 - yes_px, 6)
+        bet_id = self._record_fill(entry["ticker"], entry["side"], n, px, source=entry["source"])
+        self.store.log_activity("order", f"[LIVE] Fill {n:g}x {entry['side'].upper()} {entry['ticker']} @ {px * 100:.0f}¢ ({entry['source']})")
+        if done and self.ledger is not None and entry.get("order_log_id"):
+            try:
+                self.ledger.set_auto_order_status_sync(entry["order_log_id"], "FILLED")
+            except Exception:
+                pass
+        return bet_id
+
+    def on_user_order(self, msg: dict) -> None:
+        """Order status push: drop canceled/executed orders from the resting map."""
+        oid = str(msg.get("order_id") or "")
+        status = str(msg.get("status") or "").lower()
+        if status not in {"canceled", "cancelled", "executed"}:
+            return
+        with self._resting_lock:
+            entry = self.resting.pop(oid, None)
+        if entry is None or self.ledger is None or not entry.get("order_log_id"):
+            return
+        final = "FILLED" if status == "executed" else ("PARTIAL" if entry.get("filled") else "CANCELED")
+        try:
+            self.ledger.set_auto_order_status_sync(entry["order_log_id"], final)
+        except Exception:
+            pass
+
+    def cancel(self, order_id: str, ticker: Optional[str] = None) -> dict:
+        """Cancel a resting live order (Cancel Order V2)."""
+        try:
+            resp = self.client.cancel_order(order_id, market_ticker=ticker)
+        except Exception as e:
+            return {"ok": False, **friendly_order_error(e)}
+        with self._resting_lock:
+            entry = self.resting.pop(str(order_id), None)
+        if entry and self.ledger is not None and entry.get("order_log_id"):
+            try:
+                self.ledger.set_auto_order_status_sync(entry["order_log_id"], "PARTIAL" if entry.get("filled") else "CANCELED")
+            except Exception:
+                pass
+        self.store.log_activity("order", f"[LIVE] Canceled resting order {order_id} ({ticker or ''})")
+        return {"ok": True, "response": resp}

@@ -301,6 +301,21 @@ function paintMode(s) {
   }
 }
 
+function paintFeed(st) {
+  const wb = $("#badge-ws");
+  if (!wb) return;
+  st = st || {};
+  if (st.live) {
+    wb.textContent = "LIVE FEED";
+    wb.className = "badge ok";
+  } else {
+    wb.textContent = "POLLING";
+    wb.className = "badge warn";
+  }
+  const fills = st.fills_stream || {};
+  wb.title = `Price feed: ${st.mode || "REST polling"} · ${st.reason || ""} · books ${st.synced_books || 0} · fills feed ${fills.connected ? "on" : "off"}`;
+}
+
 async function refreshStatus() {
   try {
     const s = await api("/api/status");
@@ -320,6 +335,7 @@ async function refreshStatus() {
       eb.textContent = "EXCHANGE ?";
       eb.className = "badge warn";
     }
+    paintFeed(s.stream);
     if (s.host_key) $("#host-key").value = s.host_key;
     updateCredentialStatus(s);
     $("#first-run-banner").classList.toggle("hidden", Boolean(s.has_keys));
