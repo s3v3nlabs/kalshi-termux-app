@@ -6,6 +6,7 @@ Tables (spec item 1):
   calibration(bucket, predicted, actual, n)
   settled_markets(ticker, ..., result, close_time, ...)    -- public Kalshi history
   settled_snapshots(ticker, horizon_h, snapshot_ts, features_json, ...)
+  research_cache(ticker, brief_json, created_at, expires_at)  -- on-demand research briefs (TTL)
 
 model_runs are training snapshots, not a poll log: the scanner keeps at most
 one row per ticker per hour (``add_model_snapshots``) and a bet forces one.
@@ -86,6 +87,12 @@ CREATE TABLE IF NOT EXISTS settled_snapshots (
 CREATE TABLE IF NOT EXISTS ledger_meta (
     key TEXT PRIMARY KEY,
     value TEXT
+);
+CREATE TABLE IF NOT EXISTS research_cache (
+    ticker TEXT PRIMARY KEY,
+    brief_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS calibration (
     bucket TEXT PRIMARY KEY,
@@ -332,6 +339,38 @@ class Ledger:
         finally:
             await conn.close()
 
+    # ----- research briefs (on-demand cache; see app/strategy/research.py) -----
+
+    async def get_research(self, ticker: str, now_epoch: float) -> Optional[dict]:
+        conn = await self._db()
+        try:
+            row = await (
+                await conn.execute(
+                    "SELECT brief_json, created_at, expires_at FROM research_cache WHERE ticker=? AND expires_at > ?",
+                    (ticker, float(now_epoch)),
+                )
+            ).fetchone()
+        finally:
+            await conn.close()
+        if row is None:
+            return None
+        try:
+            return {"brief": json.loads(row[0]), "created_at": row[1], "expires_at": float(row[2])}
+        except ValueError:
+            return None
+
+    async def put_research(self, ticker: str, brief: dict, created_at: str, expires_at: float) -> None:
+        conn = await self._db()
+        try:
+            await conn.execute(
+                "INSERT OR REPLACE INTO research_cache(ticker, brief_json, created_at, expires_at) VALUES(?,?,?,?)",
+                (ticker, json.dumps(brief, default=str), created_at, float(expires_at)),
+            )
+            await conn.execute("DELETE FROM research_cache WHERE expires_at < ?", (float(expires_at) - 86400.0,))
+            await conn.commit()
+        finally:
+            await conn.close()
+
     async def latest_model_run(self, ticker: str, before_ts: Optional[str] = None) -> Optional[dict]:
         conn = await self._db()
         try:
@@ -529,6 +568,12 @@ class Ledger:
 
     def set_meta_sync(self, key, value):
         return run_sync(self.set_meta(key, value))
+
+    def get_research_sync(self, ticker, now_epoch):
+        return run_sync(self.get_research(ticker, now_epoch))
+
+    def put_research_sync(self, ticker, brief, created_at, expires_at):
+        return run_sync(self.put_research(ticker, brief, created_at, expires_at))
 
 
 BRIER_THRESHOLD = 0.25

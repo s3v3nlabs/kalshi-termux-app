@@ -284,6 +284,7 @@ const OVERSCAN = 6;
 let scanRows = [];
 let scanWeights = null;
 let expandedTicker = null;
+const researchState = {}; // ticker -> {status: "loading"|"ok"|"error", data, error}
 
 function isPhone() {
   return window.matchMedia("(max-width: 600px)").matches;
@@ -291,11 +292,13 @@ function isPhone() {
 function baseRowH() {
   return isPhone() ? 128 : 48;
 }
-function detailH() {
-  return isPhone() ? 600 : 440;
+function detailH(m) {
+  // An open Research panel adds room below the z-table (the panel also scrolls inside .feat).
+  const extra = m && researchState[m.ticker] ? (isPhone() ? 620 : 420) : 0;
+  return (isPhone() ? 600 : 440) + extra;
 }
 function rowH(m) {
-  return baseRowH() + (m.ticker === expandedTicker ? detailH() : 0);
+  return baseRowH() + (m.ticker === expandedTicker ? detailH(m) : 0);
 }
 function pct(p) {
   return p == null || !Number.isFinite(Number(p)) ? "—" : (Number(p) * 100).toFixed(1) + "%";
@@ -346,7 +349,7 @@ function featureBreakdown(m) {
     return `<tr><td>${n}${nul}</td><td>${x.toFixed(3)}</td><td>${wi.toFixed(3)}</td><td>${(wi * x).toFixed(3)}</td></tr>`;
   });
   const p = 1 / (1 + Math.exp(-z));
-  return `<div class="feat" style="height:${detailH()}px">
+  return `<div class="feat" style="height:${detailH(m)}px">
     <table class="feat-table"><thead><tr><th>input</th><th>x</th><th>w</th><th>w·x</th></tr></thead>
     <tbody><tr><td>w0 (bias)</td><td>1</td><td>${Number(w.w0 || 0).toFixed(3)}</td><td>${Number(w.w0 || 0).toFixed(3)}</td></tr>
     ${lines.join("")}</tbody></table>
@@ -355,8 +358,80 @@ function featureBreakdown(m) {
     }${m.model_uncalibrated ? " · Kelly halved (uncalibrated)" : ""}</p>
     ${contextBox(m)}
     ${gemBreakdown(m)}
+    ${researchBox(m)}
   </div>`;
 }
+
+// ---- research companion (opened per row; never fetched by the 5 s scan poll) ----
+const RESEARCH_SECTIONS = [
+  ["settles_yes", "What settles YES"],
+  ["would_flip", "What would flip it"],
+  ["priced_in", "Already priced in"],
+  ["still_thin", "Still thin"],
+];
+
+function ageText(s) {
+  const n = Number(s) || 0;
+  return n < 60 ? `${n}s` : `${Math.round(n / 60)}m`;
+}
+
+function researchBox(m) {
+  const st = researchState[m.ticker];
+  const t = escapeHtml(m.ticker || "");
+  if (!st) {
+    return `<div class="gem-box research-box"><button type="button" class="btn small research-btn" data-ticker="${t}"
+      aria-label="Open research brief for ${t}">Research</button>
+      <p class="gem-note muted">Public sources for this market: Kalshi rules, settlement source, and ESPN / NWS / Coinbase when they apply. Read-only.</p></div>`;
+  }
+  if (st.status === "loading") {
+    return `<div class="gem-box research-box" aria-busy="true"><p class="gem-head">Research</p><p class="gem-note muted">Loading sources…</p></div>`;
+  }
+  if (st.status === "error") {
+    return `<div class="gem-box research-box"><p class="gem-head">Research</p>
+      <p class="gem-note neg">Could not load: ${escapeHtml(st.error || "error")}</p>
+      <div class="research-actions"><button type="button" class="btn small research-refresh" data-ticker="${t}">Retry</button>
+      <button type="button" class="btn small ghost research-close" data-ticker="${t}">Close</button></div></div>`;
+  }
+  const d = st.data || {};
+  const sec = d.sections || {};
+  const body = RESEARCH_SECTIONS.map(([k, label]) => {
+    const items = (sec[k] || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+    return `<p class="research-sec">${label}</p><ul class="research-list">${items || "<li>—</li>"}</ul>`;
+  }).join("");
+  const cites = (d.citations || [])
+    .map((c) =>
+      c.url
+        ? `<li><a href="${escapeHtml(c.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(c.name || c.url)}</a></li>`
+        : `<li>${escapeHtml(c.name || "")}</li>`
+    )
+    .join("");
+  const cached = d.cached ? `cached ${ageText(d.cache_age_s)} ago` : "fresh";
+  const g = d.geo || {};
+  const geoNote = g.allowed === false ? `<p class="gem-note neg">Geo: ${escapeHtml(g.reason || "Blocked")} — Buy stays disabled.</p>` : "";
+  return `<div class="gem-box research-box">
+    <p class="gem-head">Research <span class="cov cov-${escapeHtml(d.coverage || "thin")}">${escapeHtml(d.coverage_label || "")}</span></p>
+    <p class="gem-note muted">${escapeHtml(d.category || "")} · ${cached} · keeps ${Math.round((d.ttl_s || 0) / 60)} min</p>
+    ${geoNote}
+    ${body}
+    <p class="research-sec">Sources</p><ul class="research-list cites">${cites || "<li>none</li>"}</ul>
+    <p class="gem-note muted">${escapeHtml(d.note || "")}</p>
+    <div class="research-actions"><button type="button" class="btn small research-refresh" data-ticker="${t}">Refresh</button>
+    <button type="button" class="btn small ghost research-close" data-ticker="${t}">Close</button></div>
+  </div>`;
+}
+
+async function loadResearch(ticker, refresh = false) {
+  researchState[ticker] = { status: "loading" };
+  paintScanWindow();
+  try {
+    const data = await api(`/api/research/${encodeURIComponent(ticker)}${refresh ? "?refresh=1" : ""}`);
+    researchState[ticker] = { status: "ok", data };
+  } catch (e) {
+    researchState[ticker] = { status: "error", error: e.message };
+  }
+  paintScanWindow();
+}
+// ---- end research companion ----
 
 function gemBadge(m) {
   const g = m.gemini;
@@ -466,6 +541,8 @@ function paintScanWindow() {
     while (end < rows.length && offsets[end] < viewBot) end++;
     end = Math.min(rows.length, end + OVERSCAN);
   }
+  const openFeat = body.querySelector(".scan-row.open .feat");
+  const featScroll = openFeat ? openFeat.scrollTop : 0;
   const html = [];
   for (let i = start; i < end; i++) {
     const m = rows[i];
@@ -476,6 +553,8 @@ function paintScanWindow() {
     );
   }
   body.innerHTML = html.join("");
+  const feat = body.querySelector(".scan-row.open .feat");
+  if (feat && featScroll) feat.scrollTop = featScroll; // the 5 s repaint keeps your place in the brief
 }
 
 let scanPaintQueued = false;
@@ -502,6 +581,18 @@ $("#market-list").addEventListener("click", (ev) => {
     openContract(m.ticker, m);
     return;
   }
+  const rb = ev.target.closest(".research-btn, .research-refresh, .research-close");
+  if (rb) {
+    ev.stopPropagation();
+    if (rb.classList.contains("research-close")) {
+      delete researchState[m.ticker];
+      paintScanWindow();
+    } else {
+      loadResearch(m.ticker, rb.classList.contains("research-refresh"));
+    }
+    return;
+  }
+  if (ev.target.closest("a, .research-box")) return; // links open; reading the brief does not collapse the row
   expandedTicker = expandedTicker === m.ticker ? null : m.ticker;
   paintScanWindow();
 });

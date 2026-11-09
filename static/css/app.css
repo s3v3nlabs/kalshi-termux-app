@@ -532,3 +532,20 @@ img, svg, table { max-width: 100%; }
 .gem-checks { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-family: var(--mono); font-size: 0.7rem; }
 .gem-checks .ok { color: var(--green); } .gem-checks .no { color: var(--muted); }
 .gem-badge.unverified { background: transparent; color: var(--amber); border: 1px dashed var(--amber); }
+
+/* ---------- Research companion (expanded scanner row) ---------- */
+.research-box .research-btn, .research-actions .btn { min-height: 44px; min-width: 44px; }
+.research-box .research-btn { width: 100%; margin-bottom: 2px; }
+.research-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.research-actions .btn { flex: 1 1 120px; }
+.research-sec { margin: 8px 0 2px; font-size: 0.72rem; font-weight: 700; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.04em; }
+.research-list { margin: 0; padding-left: 16px; font-size: 0.72rem; line-height: 1.4; overflow-wrap: anywhere; word-break: break-word; }
+.research-list li { margin: 2px 0; }
+.research-list.cites a { color: var(--cyan); display: inline-block; min-height: 28px; padding: 4px 0; overflow-wrap: anywhere; }
+.cov { display: inline-block; font-size: 0.64rem; font-weight: 700; border-radius: 6px; padding: 1px 6px; margin-left: 6px; border: 1px solid var(--border); }
+.cov-enough { color: var(--green); border-color: rgba(52, 211, 153, 0.45); }
+.cov-thin { color: var(--amber); border-color: rgba(251, 191, 36, 0.5); }
+.cov-conflict { color: var(--red); border-color: rgba(248, 113, 113, 0.5); }
+.research-box { max-width: 100%; overflow-x: hidden; }
+.research-box .gem-note.neg { color: var(--red); }
+.research-box .gem-note.muted { color: var(--muted); }

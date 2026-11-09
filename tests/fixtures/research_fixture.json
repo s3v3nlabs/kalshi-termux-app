@@ -1,0 +1,119 @@
+{
+ "note": "Canned public Kalshi market/series payloads for research tests (shapes from api.elections.kalshi.com, Nov 2026). No network in CI.",
+ "weather_market": {
+  "ticker": "KXHIGHNY-26NOV09-T57",
+  "event_ticker": "KXHIGHNY-26NOV09",
+  "title": "Will the maximum temperature be <57° on Nov 9, 2026?",
+  "status": "active",
+  "strike_type": "less",
+  "cap_strike": 57,
+  "floor_strike": null,
+  "yes_ask_dollars": "0.1900",
+  "yes_bid_dollars": "0.1800",
+  "no_ask_dollars": "0.8300",
+  "volume_fp": "3000",
+  "open_interest_fp": "1500",
+  "close_time": "2026-11-10T04:59:00Z",
+  "rules_primary": "If the maximum temperature recorded at New York City (CLINYC) for Nov 9, 2026, is less than 57° fahrenheit according to The Weather Company, then the market resolves to Yes.",
+  "rules_secondary": "Not all weather data is the same. The official and final value used to determine this market is the maximum/minimum temperature as reported by the Weather Company. Please note, a status of \"Final\" on weather.com/kalshi is provided for convenience only, and does not guarantee data to be error-free and thus exempt from the above."
+ },
+ "weather_series": {
+  "ticker": "KXHIGHNY",
+  "category": "Climate and Weather",
+  "title": "Highest temperature in NYC",
+  "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/GLOBALTEMPERATURE.pdf",
+  "settlement_sources": [
+   {
+    "name": "The Weather Company",
+    "url": "https://weather.com/kalshi"
+   }
+  ]
+ },
+ "crypto_market": {
+  "ticker": "KXBTCD-26NOV0902-T74999.99",
+  "event_ticker": "KXBTCD-26NOV0902",
+  "title": "Bitcoin price on Nov 9, 2026?",
+  "status": "active",
+  "strike_type": "greater",
+  "floor_strike": 74999.99,
+  "cap_strike": null,
+  "yes_ask_dollars": "0.3100",
+  "yes_bid_dollars": "0.3000",
+  "no_ask_dollars": "0.7000",
+  "volume_fp": "12000",
+  "open_interest_fp": "8000",
+  "close_time": "2026-11-09T07:00:00Z",
+  "rules_primary": "If the simple average of the sixty seconds of CF Benchmarks' Bitcoin Real-Time Index (BRTI) before 2 AM EST is above 74999.99 at 2 AM EST on Nov 9, 2026, then the market resolves to Yes.",
+  "rules_secondary": "Not all cryptocurrency price data is the same. The price used to determine this market is based on CF Benchmarks' corresponding Real Time Index (RTI)."
+ },
+ "crypto_series": {
+  "ticker": "KXBTCD",
+  "category": "Crypto",
+  "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/BTC.pdf",
+  "settlement_sources": [
+   {
+    "name": "CF Benchmarks",
+    "url": "https://www.cfbenchmarks.com/data/indices/BRTI"
+   }
+  ]
+ },
+ "sports_market": {
+  "ticker": "KXNFLGAME-26NOV09ATLGB-GB",
+  "event_ticker": "KXNFLGAME-26NOV09ATLGB",
+  "title": "Atlanta at Green Bay Winner?",
+  "yes_sub_title": "Green Bay",
+  "status": "active",
+  "yes_ask_dollars": "0.7700",
+  "yes_bid_dollars": "0.7600",
+  "no_ask_dollars": "0.2400",
+  "volume_fp": "50000",
+  "open_interest_fp": "20000",
+  "close_time": "2026-11-23T18:00:00Z",
+  "rules_primary": "If Green Bay wins the Atlanta vs Green Bay Pro Football game originally scheduled for Nov 9, 2026, then the market resolves to Yes.",
+  "rules_secondary": "If the game is postponed, the market will resolve per the contract terms."
+ },
+ "sports_series": {
+  "ticker": "KXNFLGAME",
+  "category": "Sports",
+  "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/FOOTBALLGAMEWIN.pdf",
+  "settlement_sources": [
+   {
+    "name": "the Governing League",
+    "url": "https://www.nfl.com/"
+   }
+  ]
+ },
+ "econ_market": {
+  "ticker": "KXFEDDECISION-26DEC-H0",
+  "event_ticker": "KXFEDDECISION-26DEC",
+  "title": "Fed holds rates in December 2026?",
+  "status": "active",
+  "yes_ask_dollars": "0.6200",
+  "yes_bid_dollars": "0.5400",
+  "no_ask_dollars": "0.4600",
+  "volume_fp": "120",
+  "open_interest_fp": "90",
+  "close_time": "2026-12-16T18:59:00Z",
+  "rules_primary": "If the Federal Reserve leaves the upper bound of the federal funds target range unchanged at its December 2026 meeting, then the market resolves to Yes."
+ },
+ "econ_series": {
+  "ticker": "KXFEDDECISION",
+  "category": "Economics",
+  "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/FEDDECISION.pdf",
+  "settlement_sources": [
+   {
+    "name": "Federal Reserve",
+    "url": "https://www.federalreserve.gov"
+   }
+  ]
+ },
+ "unknown_market": {
+  "ticker": "KXODDTHING-26NOV09",
+  "event_ticker": "KXODDTHING-26NOV09",
+  "title": "Odd thing happens?",
+  "status": "active",
+  "yes_ask_dollars": "0.0500",
+  "no_ask_dollars": "0.9700",
+  "volume_fp": "40"
+ }
+}

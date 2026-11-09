@@ -254,6 +254,31 @@ def api_market(ticker: str, request: Request, bankroll: float = 1000.0):
         raise HTTPException(502, str(e))
 
 
+# ---------- research (on demand; never on the scanner poll) ----------
+
+@app.get("/api/research/{ticker}")
+@app.get("/research/{ticker}")
+def api_research(ticker: str, request: Request, refresh: bool = False):
+    """Research brief for one market, opened from the expanded scanner row.
+
+    Cached in the ledger for ``RESEARCH_TTL_S`` (20 min); ``?refresh=1`` rebuilds.
+    Read-only: places no orders and does not alter the geo gate. The caller's
+    geo result is attached for display so blocked sports still say BLOCKED."""
+    from app.strategy.research import get_research
+
+    t = (ticker or "").strip().upper()
+    if not t or len(t) > 120:
+        raise HTTPException(400, "Ticker required")
+    try:
+        brief = get_research(t, client=client, ledger=ledger, refresh=bool(refresh))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        store.log_activity("error", f"Research failed for {t}: {e}")
+        raise HTTPException(502, f"Research failed: {e}")
+    return {"ok": True, **brief, "geo": geo.check(t, geo.state_for_request(request))}
+
+
 # ---------- strategy ----------
 
 class AnalyzeBody(BaseModel):

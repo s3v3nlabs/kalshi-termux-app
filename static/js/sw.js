@@ -3,7 +3,7 @@
  * fast. Anything under /api/ always goes to the network and is never cached:
  * prices, balances, and orders must be live.
  */
-const CACHE = "kalshi-shell-v1";
+const CACHE = "kalshi-shell-v2"; // v2: research panel
 const SHELL = [
   "/",
   "/static/css/app.css",
