@@ -568,6 +568,70 @@ async function analyze() {
   }
 }
 
+/* ---------- Calibration (operator console, screen 2) ---------- */
+function calibSvg(buckets) {
+  const W = 340, H = 260, L = 38, R = 10, T = 12, B = 34;
+  const pw = W - L - R, ph = H - T - B;
+  const x = (v) => L + v * pw;
+  const y = (v) => T + (1 - v) * ph;
+  const parts = [];
+  for (let i = 0; i <= 10; i += 2) {
+    const v = i / 10;
+    parts.push(`<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/>`);
+    parts.push(`<text x="${L - 6}" y="${y(v) + 3}" class="ax" text-anchor="end">${i * 10}%</text>`);
+  }
+  buckets.forEach((b, i) => {
+    const cx = x((i + 0.5) / 10);
+    if (i % 2 === 0) parts.push(`<text x="${cx}" y="${H - B + 14}" class="ax" text-anchor="middle">${b.bucket}</text>`);
+  });
+  parts.push(`<text x="${L + pw / 2}" y="${H - 4}" class="ax" text-anchor="middle">model probability bucket</text>`);
+  parts.push(`<line x1="${x(0)}" y1="${y(0)}" x2="${x(1)}" y2="${y(1)}" class="diag"/>`);
+  const series = (key, cls) => {
+    const pts = buckets
+      .map((b, i) => (b.n && b[key] != null ? [x((i + 0.5) / 10), y(Number(b[key])), b] : null))
+      .filter(Boolean);
+    if (pts.length > 1) parts.push(`<polyline class="${cls}" points="${pts.map((p) => p[0] + "," + p[1]).join(" ")}"/>`);
+    pts.forEach((p) =>
+      parts.push(`<circle class="${cls}-dot" cx="${p[0]}" cy="${p[1]}" r="${Math.min(7, 3 + Math.log2(1 + p[2].n))}"><title>${
+        p[2].bucket
+      }: ${key} ${(Number(p[2][key]) * 100).toFixed(1)}% (n=${p[2].n})</title></circle>`)
+    );
+  };
+  series("predicted", "pred");
+  series("actual", "act");
+  return parts.join("");
+}
+
+async function refreshCalibration() {
+  try {
+    const c = await api("/calibration");
+    $("#calib-brier").textContent = c.brier == null ? "—" : Number(c.brier).toFixed(4);
+    const banner = $("#calib-banner");
+    if (c.brier != null && c.brier > c.threshold) {
+      banner.textContent = `Model uncalibrated: Brier ${Number(c.brier).toFixed(3)} > ${c.threshold}. Kelly is halved on every scan.`;
+      banner.className = "calib-banner bad";
+    } else if (c.brier == null) {
+      banner.textContent = "No settled bets yet, so the model is treated as uncalibrated and Kelly is halved.";
+      banner.className = "calib-banner warn";
+    } else {
+      banner.className = "calib-banner hidden";
+    }
+    $("#calib-meta").textContent = `${c.n} settled bet${c.n === 1 ? "" : "s"} · threshold ${c.threshold} · updates every 30 s`;
+    $("#calib-svg").innerHTML = calibSvg(c.buckets || []);
+    $("#calib-table").innerHTML = (c.buckets || [])
+      .map(
+        (b) => `<div class="cb"><span>${b.bucket}%</span><span>pred ${b.predicted == null ? "—" : (b.predicted * 100).toFixed(1) + "%"}</span><span>act ${
+          b.actual == null ? "—" : (b.actual * 100).toFixed(1) + "%"
+        }</span><span>n ${b.n}</span></div>`
+      )
+      .join("");
+  } catch (e) {
+    $("#calib-meta").textContent = "Error: " + e.message;
+  }
+}
+setInterval(() => panelVisible("calibration") && refreshCalibration(), 30000);
+$$('#nav button[data-panel="calibration"]').forEach((b) => b.addEventListener("click", refreshCalibration));
+
 /* ---------- bet form ---------- */
 
 function setSide(side) {

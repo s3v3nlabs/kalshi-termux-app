@@ -46,6 +46,7 @@
 
     <nav class="nav" id="nav" aria-label="Sections">
       <button data-panel="scanner" class="active" type="button"><span class="nav-ico" aria-hidden="true">📈</span><span>Markets</span></button>
+      <button data-panel="calibration" type="button"><span class="nav-ico" aria-hidden="true">🎚️</span><span>Calib</span></button>
       <button data-panel="contract" type="button"><span class="nav-ico" aria-hidden="true">🎯</span><span>Bet</span></button>
       <button data-panel="nash" type="button"><span class="nav-ico" aria-hidden="true">🧮</span><span>Kelly</span></button>
       <button data-panel="account" type="button"><span class="nav-ico" aria-hidden="true">💼</span><span>Account</span></button>
@@ -99,6 +100,19 @@
           <span role="columnheader" class="sr-only">Buy</span>
         </div>
         <div class="scan-body" id="market-list" role="rowgroup"></div>
+      </div>
+    </section>
+
+    <!-- CALIBRATION -->
+    <section class="panel" id="panel-calibration">
+      <div class="card">
+        <h2>Is the model calibrated?</h2>
+        <div class="calib-banner hidden" id="calib-banner" role="alert"></div>
+        <div class="big-stat"><span class="big-number" id="calib-brier">—</span><span class="muted">Brier score (lower is better · 0.25 = coin flip)</span></div>
+        <p class="muted" id="calib-meta">Loading…</p>
+        <svg id="calib-svg" class="calib-svg" viewBox="0 0 340 260" role="img" aria-label="Reliability curve"></svg>
+        <div class="legend"><span class="lg pred">● predicted</span><span class="lg act">● actual</span><span class="lg diag">— perfect</span></div>
+        <div id="calib-table" class="calib-table"></div>
       </div>
     </section>
 

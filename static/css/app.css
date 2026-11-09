@@ -357,3 +357,23 @@ details > summary { cursor: pointer; min-height: 32px; }
 .feat-table th, .feat-table td { text-align: right; padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .feat-table th:first-child, .feat-table td:first-child { text-align: left; color: var(--muted); }
 .feat-sum { margin: 6px 0 0; font-size: 0.76rem; color: var(--text); }
+
+/* ---------- Operator console: calibration ---------- */
+.big-stat { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.calib-banner { border-radius: 10px; padding: 10px 12px; font-weight: 700; margin: 6px 0; }
+.calib-banner.bad { background: linear-gradient(110deg, #b91c1c, #7f1d1d); color: #fff; }
+.calib-banner.warn { color: var(--amber); border: 1px solid rgba(251,191,36,0.45); background: rgba(251,191,36,0.08); }
+.calib-svg { width: 100%; max-width: 520px; height: auto; display: block; margin: 6px auto; }
+.calib-svg .grid { stroke: rgba(255,255,255,0.07); }
+.calib-svg .ax { fill: var(--muted); font-size: 9px; font-family: var(--mono); }
+.calib-svg .diag { stroke: var(--muted); stroke-dasharray: 4 4; }
+.calib-svg .pred { fill: none; stroke: var(--cyan); stroke-width: 2; }
+.calib-svg .act { fill: none; stroke: var(--magenta); stroke-width: 2; }
+.calib-svg .pred-dot { fill: var(--cyan); }
+.calib-svg .act-dot { fill: var(--magenta); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.75rem; justify-content: center; }
+.lg.pred { color: var(--cyan); } .lg.act { color: var(--magenta); } .lg.diag { color: var(--muted); }
+.calib-table { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 10px; }
+.cb { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; font-family: var(--mono); font-size: 0.72rem;
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: rgba(0,0,0,0.2); }
+.cb span:first-child { color: var(--cyan); }
