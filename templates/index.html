@@ -4,7 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#05060a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Kalshi" />
   <title>Kalshi Portal</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body>
@@ -37,27 +44,46 @@
       <button class="btn" id="btn-allow-live-top" type="button">Allow live trading</button>
     </div>
 
-    <nav class="nav" id="nav">
-      <button data-panel="scanner" class="active">Markets</button>
-      <button data-panel="contract">Contract</button>
-      <button data-panel="nash">Nash / Kelly</button>
-      <button data-panel="account">Account</button>
-      <button data-panel="settings">Settings</button>
-      <button data-panel="activity">Activity</button>
+    <nav class="nav" id="nav" aria-label="Sections">
+      <button data-panel="scanner" class="active" type="button"><span class="nav-ico" aria-hidden="true">📈</span><span>Markets</span></button>
+      <button data-panel="contract" type="button"><span class="nav-ico" aria-hidden="true">🎯</span><span>Bet</span></button>
+      <button data-panel="nash" type="button"><span class="nav-ico" aria-hidden="true">🧮</span><span>Kelly</span></button>
+      <button data-panel="account" type="button"><span class="nav-ico" aria-hidden="true">💼</span><span>Account</span></button>
+      <button data-panel="settings" type="button"><span class="nav-ico" aria-hidden="true">⚙️</span><span>Settings</span></button>
+      <button data-panel="activity" type="button"><span class="nav-ico" aria-hidden="true">🧾</span><span>Log</span></button>
     </nav>
 
     <!-- SCANNER -->
     <section class="panel active" id="panel-scanner">
+      <details class="card howto-card" id="howto-quick">
+        <summary><h2>How to use (1 minute)</h2></summary>
+        <ol class="howto">
+          <li><strong>Scan.</strong> Tap <strong>Scan live</strong>. Biggest payouts are on top.</li>
+          <li><strong>Pick a market.</strong> Tap a card. You land on <strong>Bet</strong> with the price filled in.</li>
+          <li><strong>Try a paper bet.</strong> Paper bets use no money and stay on this phone.</li>
+          <li><strong>Real bets</strong> take two steps in Settings: <strong>Allow live trading</strong> (saved), then type <strong>ARM LIVE</strong> (this session only).</li>
+          <li><strong>ESPN</strong> tags mean the game was matched to ESPN's live scoreboard. It is context, not a sure thing.</li>
+        </ol>
+        <p class="muted">Add to your home screen: in Chrome tap <strong>⋮ → Add to Home screen</strong> (or <strong>Install app</strong> below). Termux must stay running in the background.</p>
+        <button class="btn ghost hidden" id="btn-install" type="button">Install app</button>
+      </details>
       <div class="card">
         <h2>Highest payouts first</h2>
         <p class="muted">Open markets sorted by payout multiple, highest first. A big multiple (8x, 13x) means the market implies a low chance — not a likely win. Kelly and Nash figures are estimates. Nothing here is guaranteed.</p>
         <p class="muted scan-help">Scanning works without a key. Paper bets (no money) stay on this phone. Real bets use your Kalshi balance after you allow live trading and type ARM LIVE.</p>
         <div class="row" style="margin-top:10px">
-          <button class="btn" id="btn-scan">Scan live</button>
-          <button class="btn ghost" id="btn-scan-force">Force refresh</button>
-          <label style="margin:0">Limit
-            <input id="scan-limit" type="number" value="80" min="10" max="200" style="width:90px;display:inline-block;margin-left:6px" />
+          <button class="btn big" id="btn-scan" type="button">Scan live</button>
+          <button class="btn ghost" id="btn-scan-force" type="button">Force refresh</button>
+          <label class="inline-label">Limit
+            <input id="scan-limit" type="number" inputmode="numeric" value="80" min="10" max="200" />
           </label>
+        </div>
+        <div class="filter-row" id="scan-filter" role="group" aria-label="Filter markets">
+          <button type="button" class="filter active" data-filter="all">All</button>
+          <button type="button" class="filter" data-filter="espn">ESPN matched</button>
+          <button type="button" class="filter" data-filter="live">ESPN live now</button>
+          <button type="button" class="filter" data-filter="sports">Sports games</button>
+          <button type="button" class="filter" data-filter="go">GO only</button>
         </div>
         <p class="muted" id="scan-meta" style="margin-top:8px">Not scanned yet.</p>
       </div>
@@ -68,32 +94,47 @@
     <section class="panel" id="panel-contract">
       <div class="card">
         <h2>Contract detail</h2>
-        <label>Ticker</label>
-        <div class="row">
-          <input id="contract-ticker" placeholder="e.g. KXHIGHNY-…" />
-          <button class="btn" id="btn-load-contract">Load</button>
+        <label for="contract-ticker">Ticker</label>
+        <div class="row nowrap">
+          <input id="contract-ticker" placeholder="e.g. KXHIGHNY-…" autocapitalize="characters" autocomplete="off" />
+          <button class="btn" id="btn-load-contract" type="button">Load</button>
         </div>
         <div id="contract-body" class="muted" style="margin-top:12px">Select a market from the scanner or enter a ticker.</div>
       </div>
       <div class="card">
         <h2>Place a bet</h2>
         <p class="muted">Paper bets (no money) stay on this phone. Real bets (uses Kalshi balance) need <strong>Allow live trading</strong>, then type <strong>ARM LIVE</strong>.</p>
+        <div class="mode-strip" id="order-mode-strip">Paper bet — no money is sent</div>
+        <label>Side</label>
+        <div class="side-toggle" role="group" aria-label="Side">
+          <button type="button" class="side-btn yes active" data-side="yes">Buy YES</button>
+          <button type="button" class="side-btn no" data-side="no">Buy NO</button>
+        </div>
+        <input type="hidden" id="order-side" value="yes" />
         <div class="grid2">
           <div>
-            <label>Side</label>
-            <select id="order-side"><option value="yes">YES</option><option value="no">NO</option></select>
+            <label for="order-count">Contracts (whole number)</label>
+            <input id="order-count" type="number" inputmode="numeric" value="1" min="1" max="10000" step="1" />
           </div>
           <div>
-            <label>Contracts</label>
-            <input id="order-count" type="number" value="1" min="1" />
+            <label for="order-price">Max price (¢, 1–99, required)</label>
+            <input id="order-price" type="number" inputmode="numeric" min="1" max="99" step="1" placeholder="e.g. 22" />
           </div>
         </div>
-        <label>Limit price (cents, optional — blank = market-style payload)</label>
-        <input id="order-price" type="number" placeholder="e.g. 22" />
-        <div class="row" style="margin-top:12px">
-          <button class="btn" id="btn-paper">Place bet</button>
+        <label for="order-type">How to fill</label>
+        <select id="order-type">
+          <option value="limit">Limit — wait on the book at my price</option>
+          <option value="ioc">Fill now — take what's there, cancel the rest</option>
+          <option value="fok">All or nothing — fill everything now or cancel</option>
+        </select>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ghost small" id="btn-use-ask" type="button">Use current ask</button>
+          <button class="btn ghost small" id="btn-use-kelly" type="button">Use half-Kelly size</button>
         </div>
-        <pre class="mono muted" id="order-result" style="white-space:pre-wrap;margin-top:10px"></pre>
+        <p class="cost-preview" id="order-preview">Pick a side and a max price.</p>
+        <button class="btn big full" id="btn-paper" type="button">Place paper bet</button>
+        <p class="order-result" id="order-result" role="status"></p>
+        <details class="muted"><summary>Request details</summary><pre class="mono" id="order-json" style="white-space:pre-wrap"></pre></details>
       </div>
     </section>
 
@@ -133,11 +174,14 @@
         <h2>Account</h2>
         <p class="muted">Add your Kalshi key in Settings to see balance. Scanning markets works without a key.</p>
         <div class="row">
-          <button class="btn" id="btn-balance">Balance</button>
-          <button class="btn ghost" id="btn-positions">Positions</button>
-          <button class="btn ghost" id="btn-orders">Orders</button>
+          <button class="btn" id="btn-balance" type="button">Balance</button>
+          <button class="btn ghost" id="btn-positions" type="button">Positions</button>
+          <button class="btn ghost" id="btn-orders" type="button">Orders</button>
         </div>
-        <pre class="mono muted" id="account-out" style="white-space:pre-wrap;margin-top:12px;max-height:420px;overflow:auto"></pre>
+        <div id="account-summary" class="account-summary"></div>
+        <details class="muted"><summary>Raw response</summary>
+          <pre class="mono muted" id="account-out" style="white-space:pre-wrap;max-height:420px;overflow:auto"></pre>
+        </details>
       </div>
     </section>
 
@@ -151,7 +195,9 @@
           <li>Open Account and check <strong>Balance</strong>.</li>
           <li>Use Scan. <strong>Paper bets (no money)</strong> are optional and do not spend anything.</li>
           <li>For <strong>real bets (uses Kalshi balance)</strong>: tap <strong>Allow live trading</strong>, then type <strong>ARM LIVE</strong>.</li>
+          <li>Every bet needs a <strong>max price</strong> in whole cents. You never pay more than that per contract.</li>
         </ol>
+        <p class="muted">Ed25519 (Kalshi's default) and RSA keys both work.</p>
       </div>
 
       <div class="card mode-card" id="trading-mode-card">
@@ -214,7 +260,7 @@
         <input id="key-id" placeholder="Key ID from Kalshi" autocomplete="off" />
         <label>Private key text</label>
         <textarea id="key-pem" placeholder="Paste the private key text from Kalshi"></textarea>
-        <p class="muted">The text usually starts with <code>-----BEGIN RSA PRIVATE KEY-----</code> or <code>-----BEGIN PRIVATE KEY-----</code>. Never paste a key into source control or chat.</p>
+        <p class="muted">The text usually starts with <code>-----BEGIN PRIVATE KEY-----</code> (Ed25519 or RSA) or <code>-----BEGIN RSA PRIVATE KEY-----</code>. Never paste a key into source control or chat.</p>
         <div class="row" style="margin-top:10px">
           <button class="btn" id="btn-save-keys" type="button">Save on this phone</button>
           <button class="btn danger" id="btn-clear-keys" type="button">Clear local keys</button>
@@ -230,7 +276,7 @@
           <select id="host-key">
             <option value="external">external-api.kalshi.com (recommended)</option>
             <option value="elections">api.elections.kalshi.com</option>
-            <option value="demo">demo-api.kalshi.co</option>
+            <option value="demo">demo-api.kalshi.co (practice money)</option>
             <option value="trading">trading-api.kalshi.com (legacy)</option>
           </select>
           <div class="row" style="margin-top:10px">
