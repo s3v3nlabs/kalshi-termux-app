@@ -306,7 +306,30 @@ function edgePP(m) {
   return (Number(md.p_yes) - Number(md.market_p_yes)) * 100;
 }
 
-const MODEL_FEATURES = ["market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z", "flow_z"];
+const MODEL_FEATURES = [
+  "market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z", "flow_z", "weather_delta", "crypto_vol_z",
+];
+
+// Context copy says what an input is; it never labels an outcome as certain.
+function ctxText(t) {
+  return String(t || "").replace(/,?\s*(and\s+)?not an? l[o]ck\.?/gi, ".").replace(/\.\s*\./g, ".");
+}
+
+function contextBox(m) {
+  const c = m.context || {};
+  const lines = [];
+  if (m.sports_game) {
+    lines.push(m.espn_hint ? `ESPN: ${escapeHtml(ctxText(m.espn_hint))}` : "ESPN: no line or game match yet → espn_delta 0");
+  }
+  if (c.weather) {
+    lines.push(c.weather.p_yes != null ? `Weather: ${escapeHtml(c.weather.hint || "")}` : `Weather: ${escapeHtml(c.weather.error || "no data")} → weather_delta 0`);
+  }
+  if (c.crypto) {
+    lines.push(c.crypto.crypto_vol_z != null ? `Crypto: ${escapeHtml(c.crypto.hint || "")}` : `Crypto: ${escapeHtml(c.crypto.error || "no data")} → crypto_vol_z 0`);
+  }
+  if (!lines.length) lines.push("No context adapter for this market (ESPN, NWS weather, crypto vol). Book-only inputs.");
+  return `<div class="gem-box"><p class="gem-head">Context</p>${lines.map((l) => `<p class="gem-note">${l}</p>`).join("")}</div>`;
+}
 
 function featureBreakdown(m) {
   const md = m.model || {};
@@ -330,6 +353,7 @@ function featureBreakdown(m) {
     <p class="mono feat-sum">z = ${z.toFixed(3)} → p = ${(p * 100).toFixed(1)}% · mispricing ${
       m.mispricing == null ? "— (not in top 10 by volume)" : (m.mispricing * 100).toFixed(2) + "pp"
     }${m.model_uncalibrated ? " · Kelly halved (uncalibrated)" : ""}</p>
+    ${contextBox(m)}
     ${gemBreakdown(m)}
   </div>`;
 }

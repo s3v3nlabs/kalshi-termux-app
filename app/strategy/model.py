@@ -1,7 +1,7 @@
 """Logistic scorer that replaces the old shrink-toward-50% prior.
 
     z = w0 + w1*market_edge + w2*time_to_close + w3*volume_z + w4*espn_delta + w5*spread_z
-          + w6*flow_z
+          + w6*flow_z + w7*weather_delta + w8*crypto_vol_z
     p = 1 / (1 + e^-z)          (P(YES), clamped to [0.01, 0.99])
 
 Feature definitions (simplest reading of the spec; see BUILD_NOTES):
@@ -12,6 +12,10 @@ Feature definitions (simplest reading of the spec; see BUILD_NOTES):
   spread_z      = (spread_cents - 3) / 3
   flow_z        = log1p(volume / (open_interest + 1)) - ln 2, clipped to [-3, 3]
                   (unusual flow: 0 when volume = open interest; 0 when OI unknown)
+  weather_delta = logit(NWS P(YES)) - logit(market P(YES)), weather markets only
+  crypto_vol_z  = signed realized-vol z (app/strategy/context.py), crypto only
+  Context terms are 0 live when there is no match / the fetch failed, and
+  null (also 0 in z) on historical rows where they cannot be rebuilt.
 
 Weights start at 0.1 (``model_weights.json`` in this folder). Refits are
 written to ``data/model_weights.json`` (gitignored) and win over the default.
@@ -29,7 +33,11 @@ from app.config import settings
 
 log = logging.getLogger("kalshi.model")
 
-FEATURES = ("market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z", "flow_z")
+FEATURES = (
+    "market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z", "flow_z", "weather_delta", "crypto_vol_z",
+)
+# Context terms that cannot be rebuilt for settled history (stored as null).
+LIVE_ONLY_FEATURES = ("espn_delta", "weather_delta", "crypto_vol_z")
 WEIGHT_KEYS = ("w0",) + tuple(f"w{i}" for i in range(1, len(FEATURES) + 1))
 FLOW_REF = math.log(2.0)
 DEFAULT_WEIGHTS_PATH = Path(__file__).with_name("model_weights.json")
@@ -80,6 +88,8 @@ def build_features(
     espn_p_yes: Optional[float] = None,
     now: Optional[datetime] = None,
     open_interest: Optional[float] = None,
+    weather_p_yes: Optional[float] = None,
+    crypto_vol_z: Optional[float] = None,
 ) -> dict[str, float]:
     m = logit(market_prob)
     return {
@@ -89,6 +99,8 @@ def build_features(
         "espn_delta": round(logit(espn_p_yes) - m, 6) if espn_p_yes is not None else 0.0,
         "spread_z": round((float(spread_cents or 0) - 3.0) / 3.0, 6),
         "flow_z": flow_z(volume, open_interest),
+        "weather_delta": round(logit(weather_p_yes) - m, 6) if weather_p_yes is not None else 0.0,
+        "crypto_vol_z": round(float(crypto_vol_z), 6) if crypto_vol_z is not None else 0.0,
     }
 
 

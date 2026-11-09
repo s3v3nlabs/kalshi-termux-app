@@ -182,7 +182,8 @@ def snapshot_features(market: dict, snap: dict) -> dict:
     )
     for name in M.FEATURES:
         feats.setdefault(name, None)
-    feats["espn_delta"] = None  # not recoverable historically; null -> 0 in z
+    for name in M.LIVE_ONLY_FEATURES:
+        feats[name] = None  # not recoverable historically; null -> 0 in z
     feats.update(
         {
             "market_p_yes": round(market_p, 6),

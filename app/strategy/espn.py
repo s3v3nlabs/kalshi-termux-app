@@ -388,6 +388,24 @@ class EspnBoard:
             return None
         return probability_from_match(parsed, matched)
 
+    def match_status(self, market: dict) -> str:
+        """Why a full-game market has no ESPN probability (uses the cache):
+        ``unparsed`` (rules text did not parse), ``no_game`` (no scoreboard
+        game on the date ±1 day), ``matched_no_line`` (game found, but no
+        moneyline / usable spread yet and not live/final), or ``matched``."""
+        parsed = parse_kalshi_game(market)
+        if parsed is None:
+            return "unparsed"
+        events = list(self._events(parsed.league, parsed.scheduled))
+        matched = match_game(parsed, events)
+        if matched is None:
+            for delta in (-1, 1):
+                events.extend(self._events(parsed.league, parsed.scheduled + timedelta(days=delta)))
+            matched = match_game(parsed, events)
+        if matched is None:
+            return "no_game"
+        return "matched" if probability_from_match(parsed, matched) is not None else "matched_no_line"
+
     def _events(self, league: str, day: date) -> list[dict]:
         key = (league, day.strftime("%Y%m%d"))
         now = time.monotonic()
@@ -727,6 +745,10 @@ def _pregame_probability(comp: dict, side: str) -> Optional[float]:
         return None
     home_ml = _moneyline(odds.get("homeTeamOdds") or {})
     away_ml = _moneyline(odds.get("awayTeamOdds") or {})
+    if home_ml is None or away_ml is None:
+        # Current scoreboard shape: odds.moneyline.{home,away}.{close,open}.odds = "+117"
+        home_ml = home_ml if home_ml is not None else _moneyline_v2(odds, "home")
+        away_ml = away_ml if away_ml is not None else _moneyline_v2(odds, "away")
     if home_ml is not None and away_ml is not None:
         ph = _american_implied(home_ml)
         pa = _american_implied(away_ml)
@@ -765,6 +787,24 @@ def _moneyline(side_odds: dict) -> Optional[float]:
         if val == 0:
             continue
         return val
+    return None
+
+
+def _moneyline_v2(odds: dict, side: str) -> Optional[float]:
+    block = ((odds.get("moneyline") or {}).get(side) or {}) if isinstance(odds.get("moneyline"), dict) else {}
+    for when in ("close", "open"):
+        raw = (block.get(when) or {}).get("odds")
+        if raw is None:
+            continue
+        txt = str(raw).strip().upper()
+        if txt in {"EVEN", "EV"}:
+            return 100.0
+        try:
+            val = float(txt.replace("+", ""))
+        except ValueError:
+            continue
+        if val != 0 and abs(val) >= 100:
+            return val
     return None
 
 

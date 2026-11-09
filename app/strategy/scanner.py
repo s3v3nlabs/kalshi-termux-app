@@ -14,6 +14,7 @@ from app.strategy.espn import (
     us_today,
 )
 from app.strategy.analogs import annotate_rows
+from app.strategy.context import ContextAdapters, get_context
 from app.strategy.gems import gem_check, suppress_paired_gems
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds, kelly_size
 from app.strategy.model import build_features, load_model, predict
@@ -231,8 +232,12 @@ def enrich_market(
     espn: Optional[EspnBoard] = None,
     uncalibrated: bool = False,
     weights: Optional[dict] = None,
+    context: Optional[ContextAdapters] = None,
 ) -> Optional[dict]:
-    """``uncalibrated=True`` (Brier > 0.25 or no settled history) halves Kelly."""
+    """``uncalibrated=True`` (Brier > 0.25 or no settled history) halves Kelly.
+
+    ``context`` (weather / crypto adapters) is opt-in so a bare call never
+    touches the network for non-sports markets."""
     ticker = m.get("ticker") or ""
     if "CROSSCATEGORY" in ticker.upper():
         return None
@@ -299,6 +304,16 @@ def enrich_market(
 
     # Logistic model (item 3). Market P(YES) = mid of YES ask and 1 - NO ask.
     market_p_yes = max(0.01, min(0.99, (yes_ask + (1.0 - no_ask)) / 2.0))
+    weather_ctx = crypto_ctx = None
+    if context is not None:
+        try:
+            weather_ctx = context.weather.estimate(m)
+        except Exception as exc:  # fail soft
+            weather_ctx = {"error": str(exc), "p_yes": None}
+        try:
+            crypto_ctx = context.crypto.context(m)
+        except Exception as exc:
+            crypto_ctx = {"error": str(exc), "crypto_vol_z": None}
     logit_features = build_features(
         market_p_yes,
         close_time=m.get("close_time"),
@@ -306,6 +321,8 @@ def enrich_market(
         spread_cents=spread_cents,
         espn_p_yes=model_p_yes,
         open_interest=oi,
+        weather_p_yes=(weather_ctx or {}).get("p_yes"),
+        crypto_vol_z=(crypto_ctx or {}).get("crypto_vol_z"),
     )
     model_w = weights if weights is not None else load_model()["weights"]
     logistic_p_yes = predict(logit_features, model_w)
@@ -400,6 +417,7 @@ def enrich_market(
         "close_time": m.get("close_time"),
         "prob_source": prob_source,
         "espn_p_yes": model_p_yes,
+        "weather_p_yes": (weather_ctx or {}).get("p_yes"),
     }
 
     return {
@@ -424,6 +442,7 @@ def enrich_market(
         "sports_game": sports_game,
         "espn_hint": espn_hint,
         "espn": estimate.as_espn() if estimate is not None else None,
+        "context": {"weather": weather_ctx, "crypto": crypto_ctx},
         "spread_cents": round(spread_cents, 2),
         "volume": vol,
         "open_interest": oi,
@@ -495,6 +514,21 @@ def _merge_nearby_game_markets(client: KalshiClient, markets: list[dict]) -> lis
     return merged
 
 
+def _context_stats(rows: list[dict], ctx: Optional[ContextAdapters]) -> dict:
+    out = {"weather_markets": 0, "weather_used": 0, "crypto_markets": 0, "crypto_used": 0}
+    for r in rows:
+        c = r.get("context") or {}
+        if c.get("weather") is not None:
+            out["weather_markets"] += 1
+            out["weather_used"] += int(c["weather"].get("p_yes") is not None)
+        if c.get("crypto") is not None:
+            out["crypto_markets"] += 1
+            out["crypto_used"] += int(c["crypto"].get("crypto_vol_z") is not None)
+    if ctx is not None:
+        out.update(ctx.stats())
+    return out
+
+
 def model_run_rows(rows: list[dict]) -> list[dict]:
     """One model_runs row per enriched market: model P(YES) + its inputs."""
     out = []
@@ -515,6 +549,8 @@ def scan_opportunities(
     include_game_series: bool = True,
     calibration: Optional[dict] = None,
     analog_pool: Optional[list[dict]] = None,
+    context: Optional[ContextAdapters] = None,
+    use_context: bool = True,
 ) -> dict:
     """``analog_pool`` (``analogs.load_pool``) adds settled-analog stats per row.
 
@@ -547,10 +583,11 @@ def scan_opportunities(
     uncalibrated = True if calibration is None else bool(calibration.get("uncalibrated", True))
     model_doc = load_model()
     weights = model_doc["weights"]
+    ctx = (context if context is not None else get_context()) if use_context else None
     enriched = []
     espn_stats = {"matched": 0, "live": 0, "pre": 0, "sports_unmatched": 0, "fallback": 0}
     for m in markets:
-        row = enrich_market(m, bankroll=bankroll, espn=board, uncalibrated=uncalibrated, weights=weights)
+        row = enrich_market(m, bankroll=bankroll, espn=board, uncalibrated=uncalibrated, weights=weights, context=ctx)
         if not row:
             continue
         if only_actionable and row["nash"]["action"] == "PASS":
@@ -567,6 +604,8 @@ def scan_opportunities(
         elif row.get("sports_game"):
             espn_stats["sports_unmatched"] += 1
             espn_stats["fallback"] += 1
+            status = board.match_status(m) if hasattr(board, "match_status") else "unknown"
+            espn_stats[status] = espn_stats.get(status, 0) + 1
         else:
             espn_stats["fallback"] += 1
         enriched.append(row)
@@ -622,6 +661,7 @@ def scan_opportunities(
         ),
         "espn": espn_stats,
         "gems_suppressed": gems_suppressed,
+        "context": _context_stats(enriched, ctx),
         "analog_pool_n": None if analog_pool is None else len(analog_pool),
         "markets": enriched,
     }
