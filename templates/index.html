@@ -60,11 +60,12 @@
       <button data-panel="calibration" type="button"><span class="nav-ico" aria-hidden="true">🎚️</span><span>Calib</span></button>
       <button data-panel="bets" type="button"><span class="nav-ico" aria-hidden="true">📒</span><span>Bets</span></button>
       <button data-panel="backtest" type="button"><span class="nav-ico" aria-hidden="true">🧪</span><span>Backtest</span></button>
-      <button data-panel="contract" type="button"><span class="nav-ico" aria-hidden="true">🎯</span><span>Bet</span></button>
-      <button data-panel="nash" type="button"><span class="nav-ico" aria-hidden="true">🧮</span><span>Kelly</span></button>
-      <button data-panel="account" type="button"><span class="nav-ico" aria-hidden="true">💼</span><span>Account</span></button>
-      <button data-panel="settings" type="button"><span class="nav-ico" aria-hidden="true">⚙️</span><span>Settings</span></button>
-      <button data-panel="activity" type="button"><span class="nav-ico" aria-hidden="true">🧾</span><span>Log</span></button>
+      <button data-panel="contract" class="nav-more-item" type="button"><span class="nav-ico" aria-hidden="true">🎯</span><span>Bet</span></button>
+      <button data-panel="nash" class="nav-more-item" type="button"><span class="nav-ico" aria-hidden="true">🧮</span><span>Kelly</span></button>
+      <button data-panel="account" class="nav-more-item" type="button"><span class="nav-ico" aria-hidden="true">💼</span><span>Account</span></button>
+      <button data-panel="settings" class="nav-more-item" type="button"><span class="nav-ico" aria-hidden="true">⚙️</span><span>Settings</span></button>
+      <button data-panel="activity" class="nav-more-item" type="button"><span class="nav-ico" aria-hidden="true">🧾</span><span>Log</span></button>
+      <button class="nav-more-btn" id="nav-more-btn" type="button" aria-expanded="false"><span class="nav-ico" aria-hidden="true">☰</span><span>More</span></button>
     </nav>
 
     <!-- SCANNER -->
@@ -72,8 +73,8 @@
       <details class="card howto-card" id="howto-quick">
         <summary><h2>How to use (1 minute)</h2></summary>
         <ol class="howto">
-          <li><strong>Scan.</strong> Tap <strong>Scan live</strong>. Biggest payouts are on top.</li>
-          <li><strong>Pick a market.</strong> Tap a card. You land on <strong>Bet</strong> with the price filled in.</li>
+          <li><strong>Scan.</strong> Tap <strong>Scan live</strong>. The most mispriced markets (model vs market) are on top; it refreshes every 5 seconds.</li>
+          <li><strong>Pick a market.</strong> Tap a row to see why the model disagrees. Tap <strong>Buy</strong> to land on <strong>Bet</strong> with the price filled in.</li>
           <li><strong>Try a paper bet.</strong> Paper bets use no money and stay on this phone.</li>
           <li><strong>Real bets</strong> take two steps in Settings: <strong>Allow live trading</strong> (saved), then type <strong>ARM LIVE</strong> (this session only).</li>
           <li><strong>ESPN</strong> tags mean the game was matched to ESPN's live scoreboard. It is context, not a sure thing.</li>

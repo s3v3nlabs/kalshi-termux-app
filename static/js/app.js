@@ -43,8 +43,13 @@ function showPanel(name) {
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "panel-" + name));
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
-$$("#nav button").forEach((btn) => {
-  btn.addEventListener("click", () => showPanel(btn.dataset.panel));
+$$("#nav button[data-panel]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    showPanel(btn.dataset.panel);
+    $("#nav").classList.remove("more-open");
+    $("#nav-more-btn").setAttribute("aria-expanded", "false");
+    $("#nav-more-btn").classList.toggle("active", btn.classList.contains("nav-more-item"));
+  });
 });
 
 /* state shared by the bet form */
@@ -284,10 +289,10 @@ function isPhone() {
   return window.matchMedia("(max-width: 600px)").matches;
 }
 function baseRowH() {
-  return isPhone() ? 116 : 48;
+  return isPhone() ? 128 : 48;
 }
 function detailH() {
-  return isPhone() ? 300 : 230;
+  return isPhone() ? 230 : 190;
 }
 function rowH(m) {
   return baseRowH() + (m.ticker === expandedTicker ? detailH() : 0);
@@ -1333,3 +1338,14 @@ function syncStripHeight() {
 }
 window.addEventListener("resize", syncStripHeight);
 syncStripHeight();
+
+// Phones: bottom bar shows Markets / Calib / Bets / Backtest / More; More opens the rest.
+$("#nav-more-btn").addEventListener("click", () => {
+  const open = $("#nav").classList.toggle("more-open");
+  $("#nav-more-btn").setAttribute("aria-expanded", String(open));
+});
+window.matchMedia("(max-width: 600px)").addEventListener("change", () => {
+  expandedTicker = null;
+  queueScanPaint();
+  syncStripHeight();
+});
