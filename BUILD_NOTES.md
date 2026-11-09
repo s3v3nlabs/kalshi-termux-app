@@ -107,3 +107,9 @@ Decisions below are the simplest option that meets each item; revisit if needed.
 - "Every fill writes a bet": live acks with `fill_count > 0` write a bet (NO fill price = 1 − V2 `average_fill_price`, which is quoted on the YES book). **Paper bets are recorded as fills at the max price** so calibration can collect data without real money. `bets` has no paper/live column (spec schema); the orders log still has `dry_run`.
 - Gap: a resting live order that fills later is not picked up (no fills poller yet).
 - Settlement: `POST /api/bets/settle` checks open bets' markets via public `GET /markets/{ticker}` and settles those with `result` yes/no; `POST /api/bets/{id}/settle {"result": "yes"|"no"}` settles manually.
+
+### 2. Calibration loop
+
+- Every `settle_bet` recomputes the `calibration` table (10 buckets: `0-10` … `90-100`, by the bet's `model_prob`) and the Brier score over all settled bets.
+- `GET /calibration` returns `{buckets, brier, n, uncalibrated, threshold}`.
+- **Uncalibrated = Brier > 0.25 or no settled bets yet** (fail safe). The scanner flags `model_uncalibrated` and halves Kelly: both the fraction and the 5% cap are halved, so the final stake is exactly half; Gemini half-Kelly becomes quarter-Kelly.

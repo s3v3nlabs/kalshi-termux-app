@@ -165,7 +165,11 @@ def api_scan(
             cached["from_cache"] = True
             return cached
     try:
-        result = scan_opportunities(client, limit=limit, bankroll=bankroll, sort=sort_mode)
+        try:
+            calib = ledger.calibration_sync()
+        except Exception:
+            calib = None  # treated as uncalibrated: Kelly halved
+        result = scan_opportunities(client, limit=limit, bankroll=bankroll, sort=sort_mode, calibration=calib)
     except Exception as e:
         store.log_activity("error", f"Scan failed: {e}")
         raise HTTPException(502, str(e))
@@ -311,6 +315,14 @@ def api_acct_orders(status: Optional[str] = None):
         return {"ok": True, "data": client.get_orders(status=status), "host": client.host}
     except Exception as e:
         raise HTTPException(502, friendly_order_error(e)["error"])
+
+
+# ---------- calibration ----------
+
+@app.get("/calibration")
+def calibration():
+    """Reliability buckets (0-10%, ..., 90-100%) + Brier over settled bets."""
+    return ledger.calibration_sync()
 
 
 # ---------- bets ledger ----------

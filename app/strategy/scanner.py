@@ -208,7 +208,9 @@ def enrich_market(
     m: dict,
     bankroll: float = 1000.0,
     espn: Optional[EspnBoard] = None,
+    uncalibrated: bool = False,
 ) -> Optional[dict]:
+    """``uncalibrated=True`` (Brier > 0.25 or no settled history) halves Kelly."""
     ticker = m.get("ticker") or ""
     if "CROSSCATEGORY" in ticker.upper():
         return None
@@ -297,19 +299,20 @@ def enrich_market(
         best_mult = no_mult
 
     # Binary-contract Kelly: edge = p * $1 - price (capped fraction).
+    kelly_scale = 0.5 if uncalibrated else 1.0
     kelly = kelly_size(
         model_prob=best_p,
         contract_price=best_price,
         bankroll=bankroll,
-        fraction=settings.kelly_fraction,
-        max_fraction=settings.kelly_max_fraction,
+        fraction=settings.kelly_fraction * kelly_scale,
+        max_fraction=settings.kelly_max_fraction * kelly_scale,
     )
     # Gemini half-Kelly on gross payout odds. fraction 0.5 matches the scrap.
     gk = kelly_from_payout_odds(
         p=best_p,
         payout_odds=best_mult,
         bankroll=bankroll,
-        fraction=0.5,
+        fraction=0.5 * kelly_scale,
     )
     nash_pay = gemini_nash_payoff(best_p, best_mult)
     signal = "GO" if nash_pay > NASH_GO_THRESHOLD else "NO-GO"
@@ -355,6 +358,8 @@ def enrich_market(
     return {
         "ticker": ticker,
         "model_features": model_features,
+        "model_uncalibrated": bool(uncalibrated),
+        "kelly_scale": kelly_scale,
         "title": m.get("title") or m.get("subtitle") or m.get("yes_sub_title") or ticker,
         "event_ticker": m.get("event_ticker"),
         "yes_ask": round(yes_ask, 4),
@@ -455,7 +460,11 @@ def scan_opportunities(
     sort: str = "payout",
     espn: Optional[EspnBoard] = None,
     include_game_series: bool = True,
+    calibration: Optional[dict] = None,
 ) -> dict:
+    """``calibration`` is the ledger's /calibration payload. When it says the
+    model is uncalibrated (Brier > 0.25, or no settled bets yet) every row is
+    flagged and Kelly is halved."""
     client = client or KalshiClient()
     limit = limit or settings.scan_limit
     markets = []
@@ -479,10 +488,11 @@ def scan_opportunities(
     if include_game_series:
         markets = _merge_nearby_game_markets(client, markets)
     board = espn if espn is not None else get_board()
+    uncalibrated = True if calibration is None else bool(calibration.get("uncalibrated", True))
     enriched = []
     espn_stats = {"matched": 0, "live": 0, "pre": 0, "sports_unmatched": 0, "fallback": 0}
     for m in markets:
-        row = enrich_market(m, bankroll=bankroll, espn=board)
+        row = enrich_market(m, bankroll=bankroll, espn=board, uncalibrated=uncalibrated)
         if not row:
             continue
         if only_actionable and row["nash"]["action"] == "PASS":
@@ -517,6 +527,9 @@ def scan_opportunities(
         "host": client.host,
         "host_key": settings.host_key,
         "updated_at": now,
+        "model_uncalibrated": uncalibrated,
+        "calibration_brier": (calibration or {}).get("brier"),
+        "calibration_n": (calibration or {}).get("n", 0),
         "cache_ttl_seconds": settings.cache_ttl,
         "disclaimer": (
             "Edge, payout multiples, and half-Kelly size are estimates, not guarantees. "

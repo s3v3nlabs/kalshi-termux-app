@@ -216,7 +216,7 @@ class Ledger:
         if bet is None:
             raise KeyError(f"bet {bet_id} not found")
         if bet["outcome"] is not None:
-            return {"bet": bet, "already_settled": True}
+            return {"bet": bet, "calibration": await self.calibration(), "already_settled": True}
         outcome = 1 if bet["side"] == winning_side else 0
         contracts = bet["stake"] / bet["price"] if bet["price"] else 0.0
         pnl = round(contracts * (1.0 - bet["price"]), 6) if outcome else round(-bet["stake"], 6)
@@ -226,7 +226,54 @@ class Ledger:
             await conn.commit()
         finally:
             await conn.close()
-        return {"bet": await self.get_bet(bet_id), "already_settled": False}
+        calib = await self.recompute_calibration()
+        return {"bet": await self.get_bet(bet_id), "calibration": calib, "already_settled": False}
+
+    # ----- calibration (item 2) -----
+
+    async def recompute_calibration(self) -> dict:
+        settled = [b for b in await self.bets(settled=True) if b["model_prob"] is not None]
+        stats: dict[str, list[float]] = {b: [0.0, 0.0, 0] for b in BUCKETS}  # type: ignore[misc]
+        for b in settled:
+            s = stats[bucket_of(b["model_prob"])]
+            s[0] += b["model_prob"]
+            s[1] += b["outcome"]
+            s[2] += 1
+        conn = await self._db()
+        try:
+            await conn.execute("DELETE FROM calibration")
+            await conn.executemany(
+                "INSERT INTO calibration(bucket, predicted, actual, n) VALUES(?,?,?,?)",
+                [
+                    (bucket, s[0] / s[2], s[1] / s[2], int(s[2]))
+                    for bucket, s in stats.items()
+                    if s[2]
+                ],
+            )
+            await conn.commit()
+        finally:
+            await conn.close()
+        return await self.calibration()
+
+    async def calibration(self) -> dict:
+        conn = await self._db()
+        try:
+            cur = await conn.execute("SELECT bucket, predicted, actual, n FROM calibration")
+            rows = {r["bucket"]: dict(r) for r in await cur.fetchall()}
+        finally:
+            await conn.close()
+        settled = [b for b in await self.bets(settled=True) if b["model_prob"] is not None]
+        brier = brier_score([(b["model_prob"], b["outcome"]) for b in settled])
+        buckets = [
+            rows.get(b, {"bucket": b, "predicted": None, "actual": None, "n": 0}) for b in BUCKETS
+        ]
+        return {
+            "buckets": buckets,
+            "brier": brier,
+            "n": len(settled),
+            "uncalibrated": is_uncalibrated(brier),
+            "threshold": BRIER_THRESHOLD,
+        }
 
     # ----- sync twins for the sync FastAPI handlers -----
 
@@ -245,8 +292,25 @@ class Ledger:
     def settle_bet_sync(self, bet_id, winning_side):
         return run_sync(self.settle_bet(bet_id, winning_side))
 
+    def calibration_sync(self):
+        return run_sync(self.calibration())
+
     def model_runs_sync(self):
         return run_sync(self.model_runs())
+
+
+BRIER_THRESHOLD = 0.25
+
+
+def brier_score(pairs: list[tuple[float, int]]) -> Optional[float]:
+    if not pairs:
+        return None
+    return round(sum((p - y) ** 2 for p, y in pairs) / len(pairs), 6)
+
+
+def is_uncalibrated(brier: Optional[float]) -> bool:
+    """No settled history counts as uncalibrated (fail safe: half Kelly)."""
+    return brier is None or brier > BRIER_THRESHOLD
 
 
 def _run_row(row) -> dict:
