@@ -10,11 +10,23 @@ from typing import Any, Optional
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from app.config import settings
 
 
+# scrypt cost: n=2**15, r=8, p=1 (~32 MiB, well under a second on a phone).
+SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**15, 8, 1
+
+
+def derive_scrypt_key(passphrase: str, salt: bytes, n: int = SCRYPT_N, r: int = SCRYPT_R, p: int = SCRYPT_P) -> bytes:
+    """Fernet key from a passphrase via scrypt (current KDF)."""
+    kdf = Scrypt(salt=salt, length=32, n=n, r=r, p=p)
+    return base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8")))
+
+
 def _derive_key(passphrase: str, salt: bytes) -> bytes:
+    """Legacy PBKDF2 key, only used to open (and then migrate) old vaults."""
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -42,9 +54,11 @@ class Vault:
         if not self.path.is_file():
             # Initialize empty vault
             salt = os.urandom(16)
-            key = _derive_key(passphrase, salt)
+            key = derive_scrypt_key(passphrase, salt)
             f = Fernet(key)
             blob = {
+                "kdf": "scrypt",
+                "scrypt": {"n": SCRYPT_N, "r": SCRYPT_R, "p": SCRYPT_P},
                 "salt": base64.b64encode(salt).decode(),
                 "payload": f.encrypt(json.dumps({}).encode()).decode(),
             }
@@ -59,14 +73,36 @@ class Vault:
 
         blob = json.loads(self.path.read_text(encoding="utf-8"))
         salt = base64.b64decode(blob["salt"])
-        key = _derive_key(passphrase, salt)
+        legacy = blob.get("kdf") != "scrypt"
+        if legacy:
+            key = _derive_key(passphrase, salt)
+        else:
+            params = blob.get("scrypt") or {}
+            key = derive_scrypt_key(
+                passphrase, salt, params.get("n", SCRYPT_N), params.get("r", SCRYPT_R), params.get("p", SCRYPT_P)
+            )
         f = Fernet(key)
         try:
-            f.decrypt(blob["payload"].encode())
+            raw = f.decrypt(blob["payload"].encode())
         except InvalidToken:
             self._unlocked = False
             self._fernet = None
             return False
+        if legacy:
+            # Migrate an old PBKDF2 vault to scrypt with a fresh salt.
+            salt = os.urandom(16)
+            f = Fernet(derive_scrypt_key(passphrase, salt))
+            blob = {
+                "kdf": "scrypt",
+                "scrypt": {"n": SCRYPT_N, "r": SCRYPT_R, "p": SCRYPT_P},
+                "salt": base64.b64encode(salt).decode(),
+                "payload": f.encrypt(raw).decode(),
+            }
+            self.path.write_text(json.dumps(blob), encoding="utf-8")
+            try:
+                os.chmod(self.path, 0o600)
+            except OSError:
+                pass
         self._fernet = f
         self._unlocked = True
         return True

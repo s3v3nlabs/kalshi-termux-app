@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import base64
 import json
+import random
 import re
 import time
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -376,6 +378,40 @@ def summarize_positions(data: dict) -> list[dict]:
 PUBLIC_FALLBACK_HOSTS = {"https://external-api.kalshi.com": "https://api.elections.kalshi.com"}
 
 
+# Retry policy (item 7): exponential backoff + full jitter, 5 tries max,
+# Retry-After honored. GETs retry on network errors, 429 and 5xx. Writes
+# retry only on 429 (Kalshi rejected it before processing), never on a
+# network error or 5xx, so a create-order is not sent twice.
+MAX_TRIES = 5
+BACKOFF_BASE = 0.5
+BACKOFF_CAP = 30.0
+RETRY_STATUSES_READ = {429, 500, 502, 503, 504}
+RETRY_STATUSES_WRITE = {429}
+
+
+def retry_after_seconds(value: Optional[str], now: Optional[float] = None) -> Optional[float]:
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value).timestamp()
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, when - (now if now is not None else time.time()))
+
+
+def backoff_delay(attempt: int, retry_after: Optional[float] = None, rng=random.random) -> float:
+    """Delay before try ``attempt + 1`` (attempt is 0-based)."""
+    if retry_after is not None:
+        return min(BACKOFF_CAP, retry_after)
+    base = min(BACKOFF_CAP, BACKOFF_BASE * (2**attempt))
+    return base / 2 + rng() * base / 2  # jitter in [base/2, base]
+
+
 def presign_text(timestamp: str, method: str, path: str) -> str:
     """Kalshi pre-sign text: timestamp + METHOD + path without the query string."""
     return f"{timestamp}{method.upper()}{path.split('?')[0]}"
@@ -397,6 +433,8 @@ class KalshiClient:
         self._private_key = None
         self.last_host_used = self.host
         self.last_error: Optional[str] = None
+        self._sleep = time.sleep
+        self._rng = random.random
 
     # ----- crypto -----
 
@@ -478,18 +516,39 @@ class KalshiClient:
 
         self.last_host_used = base
         self.last_error = None
-        try:
-            resp = self._session.request(
-                method.upper(),
-                url,
-                headers=headers,
-                params=params,
-                data=body_str if body_str else None,
-                timeout=timeout,
-            )
-        except requests.RequestException as e:
-            self.last_error = str(e)
-            raise RuntimeError(f"Network error contacting {base}: {e}") from e
+        retry_statuses = RETRY_STATUSES_WRITE if is_write else RETRY_STATUSES_READ
+        resp = None
+        for attempt in range(MAX_TRIES):
+            if attempt:
+                # Re-check token buckets and re-sign (fresh timestamp) per try.
+                if is_write:
+                    self.bucket.consume_write(1.0)
+                else:
+                    self.bucket.consume_read(1.0)
+                if auth:
+                    headers = self._auth_headers(method, path, body_str)
+            self.bucket.total.acquire()
+            try:
+                resp = self._session.request(
+                    method.upper(),
+                    url,
+                    headers=headers,
+                    params=params,
+                    data=body_str if body_str else None,
+                    timeout=timeout,
+                )
+            except requests.RequestException as e:
+                self.last_error = str(e)
+                if is_write or attempt == MAX_TRIES - 1:
+                    raise RuntimeError(f"Network error contacting {base}: {e}") from e
+                self._sleep(backoff_delay(attempt, rng=self._rng))
+                continue
+            if resp.status_code in retry_statuses and attempt < MAX_TRIES - 1:
+                hdrs = getattr(resp, "headers", None) or {}
+                ra = retry_after_seconds(hdrs.get("Retry-After") or hdrs.get("retry-after"))
+                self._sleep(backoff_delay(attempt, ra, rng=self._rng))
+                continue
+            break
 
         if resp.status_code >= 400:
             err = KalshiAPIError.from_response(resp)

@@ -146,3 +146,9 @@ Decisions below are the simplest option that meets each item; revisit if needed.
 - Sports ticker = ESPN full-game series (`KXNFLGAME`…) or a `sports_prefixes` match.
 - Scan rows get a `geo` object (`allowed`, `state`, `reason`) and stay visible so the UI can dim them; orders on a blocked sports ticker return HTTP 403 with the reason (paper and live alike). `/api/markets/{ticker}` returns `geo` too.
 - XFF is client-controlled without a trusted proxy; this is a compliance guard, not anti-spoofing.
+
+### 7. Hardening
+
+- **Vault KDF:** new vaults derive the Fernet key with scrypt (n=2^15, r=8, p=1, 16-byte salt); params are stored in the vault file. Old PBKDF2 vaults still open and are re-encrypted with scrypt + a fresh salt on the first successful unlock. If `VAULT_PASSPHRASE` is set, the vault is unlocked at startup (and the saved Key ID loaded). Otherwise unlock stays manual in Settings.
+- **Retry wrapper** in `KalshiClient.request`: up to 5 tries, exponential backoff (0.5 s × 2^n, capped at 30 s) with jitter in [base/2, base], `Retry-After` honored (seconds or HTTP date, capped at 30 s). Each retry re-checks the rate limiters and re-signs with a fresh timestamp. GETs retry on network errors, 429, 500/502/503/504. **Writes (create-order) retry only on 429**, never on a network error or 5xx, so a bet cannot be sent twice when the first attempt's result is unknown.
+- **Rate limiter:** new `GlobalRateLimiter` caps every Kalshi request at 8 req/s (burst 8), on top of the existing read/write buckets. Those older buckets are unchanged (not renamed); their sustained read rate (2/s after the initial burst) can still be the tighter limit on long scans.

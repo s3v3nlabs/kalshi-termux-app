@@ -49,6 +49,14 @@ store = Store()
 ledger = Ledger()
 apply_saved_mode(store)
 vault = Vault()
+# Startup unlock: derive the scrypt Fernet key from VAULT_PASSPHRASE if set.
+if os.getenv("VAULT_PASSPHRASE"):
+    if vault.unlock(os.environ["VAULT_PASSPHRASE"]):
+        _saved_key_id = vault.get("kalshi_key_id")
+        if _saved_key_id and not settings.key_id:
+            settings.key_id = _saved_key_id
+    else:
+        store.log_activity("security", "VAULT_PASSPHRASE did not unlock the vault")
 totp_mgr = TOTPManager(vault)
 client = KalshiClient()
 orders = OrderGate(store, client, ledger)

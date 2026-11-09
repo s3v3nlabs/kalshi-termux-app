@@ -5,6 +5,34 @@ import threading
 import time
 
 
+GLOBAL_RATE_PER_SEC = 8.0
+
+
+class GlobalRateLimiter:
+    """Hard cap on all Kalshi requests: 8 per second, burst of 8."""
+
+    def __init__(self, rate: float = GLOBAL_RATE_PER_SEC, clock=time.monotonic, sleep=time.sleep):
+        self.rate = float(rate)
+        self.capacity = float(rate)
+        self.tokens = float(rate)
+        self._clock = clock
+        self._sleep = sleep
+        self._last = clock()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        while True:
+            with self._lock:
+                now = self._clock()
+                self.tokens = min(self.capacity, self.tokens + (now - self._last) * self.rate)
+                self._last = now
+                if self.tokens >= 1.0:
+                    self.tokens -= 1.0
+                    return
+                wait = (1.0 - self.tokens) / self.rate
+            self._sleep(wait)
+
+
 class TokenBucketManager:
     """Prevents 429 throttling with separate read/write budgets."""
 
@@ -25,6 +53,7 @@ class TokenBucketManager:
         self.max_write = float(cfg["write"]) * 2
         self.last_refill = time.time()
         self._lock = threading.Lock()
+        self.total = GlobalRateLimiter()
 
     def refill(self) -> None:
         now = time.time()
