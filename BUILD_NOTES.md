@@ -113,3 +113,12 @@ Decisions below are the simplest option that meets each item; revisit if needed.
 - Every `settle_bet` recomputes the `calibration` table (10 buckets: `0-10` … `90-100`, by the bet's `model_prob`) and the Brier score over all settled bets.
 - `GET /calibration` returns `{buckets, brier, n, uncalibrated, threshold}`.
 - **Uncalibrated = Brier > 0.25 or no settled bets yet** (fail safe). The scanner flags `model_uncalibrated` and halves Kelly: both the fraction and the 5% cap are halved, so the final stake is exactly half; Gemini half-Kelly becomes quarter-Kelly.
+
+### 3. Logistic model (`app/strategy/model.py`, `app/strategy/model_weights.json`)
+
+- `z = w0 + w1*market_edge + w2*time_to_close + w3*volume_z + w4*espn_delta + w5*spread_z`, `p = sigmoid(z)` clamped to [0.01, 0.99]. This P(YES) now feeds Nash/Kelly for **every** market; the old shrink-toward-50% prior is gone (also from `nash_decision`'s no-model fallback).
+- Feature choices: `market_edge` = logit of the book's P(YES) (mid of YES ask and 1 − NO ask) so a fitted model can track the market; `time_to_close` = days/30 clipped to [0,1]; `volume_z` = (log1p(volume) − 6)/3 and `spread_z` = (spread¢ − 3)/3 use fixed reference points (no batch statistics, so single-market lookups score the same as scans); `espn_delta` = logit(ESPN P) − logit(book P), 0 without a match. ESPN labels (`espn_live`/`espn_pre`/`market_shrink`) are kept as names; `market_shrink` now means "logistic model, no ESPN match".
+- **Warning:** with every weight at 0.1 the starting model is nearly flat (a 90% book scores ≈ 58%). It disagrees hard with the market until it is refit on real outcomes, so Kelly will suggest fading favourites. Combined with item 2 (no history = uncalibrated = half Kelly) this is flagged, but do not trust live sizing until a refit and a passing backtest.
+- Weights: defaults ship in `app/strategy/model_weights.json`; refits write `data/model_weights.json` (gitignored), which wins when present.
+- Refit: full-batch gradient descent on mean log-loss, lr 0.01, 200 epochs, L2 0.001 (bias not penalised). Training rows = settled bets joined to the latest `model_runs` row for that ticker at bet time; label = YES outcome. Runs at most weekly, triggered after a settle. Needs ≥ 5 settled samples; a skipped refit is logged but does not start the 7-day clock. Every refit is logged (Python logger `kalshi.model`, activity log, and `refit_log` in the weights file, last 52 kept).
+- lr 0.01 × 200 epochs moves weights slowly per refit; that is the spec's setting.

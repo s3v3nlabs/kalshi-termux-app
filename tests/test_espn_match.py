@@ -371,7 +371,9 @@ def test_enrich_uses_espn_or_shrink():
     assert row["model_p_source"] == "espn_live"
     assert row["sports_game"] is True
     assert row["espn"]["state"] == "in"
-    assert row["nash"]["model_prob_yes"] == 0.22
+    # The logistic model is the probability; ESPN enters as espn_delta.
+    assert abs(row["nash"]["model_prob_yes"] - row["model"]["p_yes"]) < 1e-4
+    assert row["model"]["features"]["espn_delta"] < 0  # ESPN 22% vs book ~39%
     assert "espn_live" in row["explainer"]["why_odds"]
     assert "not a likely win" in row["explainer"]["why_odds"].lower()
     assert "not a lock" in row["explainer"]["edge_plain"].lower()

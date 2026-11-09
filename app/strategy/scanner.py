@@ -14,6 +14,7 @@ from app.strategy.espn import (
     us_today,
 )
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds, kelly_size
+from app.strategy.model import build_features, load_model, predict
 from app.strategy.nash import nash_decision, nash_to_dict
 
 # GO if Gemini Nash payoff clears this. Heuristic only — not a win guarantee.
@@ -24,7 +25,7 @@ _GAME_SERIES = ("KXNFLGAME", "KXNBAGAME", "KXMLBGAME", "KXNHLGAME", "KXNCAAFGAME
 _SOURCE_PLAIN = {
     "espn_live": "ESPN live scoreboard",
     "espn_pre": "ESPN pregame line",
-    "market_shrink": "market shrink",
+    "market_shrink": "logistic model, no ESPN match",
 }
 
 
@@ -122,8 +123,9 @@ def _build_explainer(
     if prob_source == "market_shrink":
         why_odds = (
             f"The {side_u} ask ({cents}¢) is the market-implied chance (~{implied}%). "
-            "No ESPN scoreboard match, so the model uses a conservative shrink from that "
-            "price toward 50% (source: market_shrink). That is an estimate, not a lock."
+            "No ESPN scoreboard match, so the logistic model scores this from the book "
+            "price, time to close, volume, and spread only (source: market_shrink). "
+            "That is an estimate, not a lock."
         )
     else:
         why_odds = (
@@ -209,6 +211,7 @@ def enrich_market(
     bankroll: float = 1000.0,
     espn: Optional[EspnBoard] = None,
     uncalibrated: bool = False,
+    weights: Optional[dict] = None,
 ) -> Optional[dict]:
     """``uncalibrated=True`` (Brier > 0.25 or no settled history) halves Kelly."""
     ticker = m.get("ticker") or ""
@@ -275,10 +278,22 @@ def enrich_market(
     prob_source = estimate.source if estimate is not None else "market_shrink"
     espn_hint = estimate.hint if estimate is not None else ""
 
+    # Logistic model (item 3). Market P(YES) = mid of YES ask and 1 - NO ask.
+    market_p_yes = max(0.01, min(0.99, (yes_ask + (1.0 - no_ask)) / 2.0))
+    logit_features = build_features(
+        market_p_yes,
+        close_time=m.get("close_time"),
+        volume=vol,
+        spread_cents=spread_cents,
+        espn_p_yes=model_p_yes,
+    )
+    model_w = weights if weights is not None else load_model()["weights"]
+    logistic_p_yes = predict(logit_features, model_w)
+
     nash = nash_decision(
         yes_ask=yes_ask,
         no_ask=no_ask,
-        model_prob_yes=model_p_yes,
+        model_prob_yes=logistic_p_yes,
         spread_cents=spread_cents,
         volume=vol,
         open_interest=oi,
@@ -345,6 +360,8 @@ def enrich_market(
     )
 
     model_features = {
+        **logit_features,
+        "market_p_yes": round(market_p_yes, 6),
         "yes_ask": round(yes_ask, 4),
         "no_ask": round(no_ask, 4),
         "volume": vol,
@@ -358,6 +375,7 @@ def enrich_market(
     return {
         "ticker": ticker,
         "model_features": model_features,
+        "model": {"p_yes": logistic_p_yes, "market_p_yes": round(market_p_yes, 6), "features": logit_features},
         "model_uncalibrated": bool(uncalibrated),
         "kelly_scale": kelly_scale,
         "title": m.get("title") or m.get("subtitle") or m.get("yes_sub_title") or ticker,
@@ -489,10 +507,12 @@ def scan_opportunities(
         markets = _merge_nearby_game_markets(client, markets)
     board = espn if espn is not None else get_board()
     uncalibrated = True if calibration is None else bool(calibration.get("uncalibrated", True))
+    model_doc = load_model()
+    weights = model_doc["weights"]
     enriched = []
     espn_stats = {"matched": 0, "live": 0, "pre": 0, "sports_unmatched": 0, "fallback": 0}
     for m in markets:
-        row = enrich_market(m, bankroll=bankroll, espn=board, uncalibrated=uncalibrated)
+        row = enrich_market(m, bankroll=bankroll, espn=board, uncalibrated=uncalibrated, weights=weights)
         if not row:
             continue
         if only_actionable and row["nash"]["action"] == "PASS":
@@ -528,6 +548,7 @@ def scan_opportunities(
         "host_key": settings.host_key,
         "updated_at": now,
         "model_uncalibrated": uncalibrated,
+        "model_version": model_doc.get("version", 0),
         "calibration_brier": (calibration or {}).get("brier"),
         "calibration_n": (calibration or {}).get("n", 0),
         "cache_ttl_seconds": settings.cache_ttl,

@@ -25,6 +25,7 @@ from app.kalshi.client import (
 from app.security.mfa import TOTPManager
 from app.security.vault import Vault
 from app.strategy.kelly import kelly_size
+from app.strategy.model import maybe_refit
 from app.strategy.monte_carlo import double_slit_simulation, sim_to_dict
 from app.strategy.nash import nash_decision, nash_to_dict
 from app.strategy.scanner import enrich_market, model_run_rows, scan_opportunities
@@ -340,9 +341,11 @@ def api_bets(settled: Optional[bool] = None):
 def api_bets_settle_auto():
     """Settle open bets whose markets Kalshi reports as settled (public reads)."""
     done = settle_open_bets(ledger, client)
+    refit = None
     if done:
         store.log_activity("settle", f"Settled {len(done)} bet(s) from Kalshi results")
-    return {"ok": True, "settled": done}
+        refit = maybe_refit(ledger, store)
+    return {"ok": True, "settled": done, "refit": refit}
 
 
 @app.post("/api/bets/{bet_id}/settle")
@@ -354,7 +357,8 @@ def api_bet_settle(bet_id: int, body: SettleBody):
     except ValueError as e:
         raise HTTPException(400, str(e))
     store.log_activity("settle", f"Bet {bet_id} settled: {body.result.upper()} won")
-    return {"ok": True, **res}
+    refit = None if res.get("already_settled") else maybe_refit(ledger, store)
+    return {"ok": True, **res, "refit": refit}
 
 
 # ---------- trading ----------

@@ -38,7 +38,7 @@ def nash_decision(
 ) -> NashResult:
     """
     Prices in dollars (0–1). If model_prob not given, derive a mild prior from
-    mid-market with mean-reversion toward 0.5 (conservative — no fake certainty).
+    the logistic scorer in app.strategy.model (no fake certainty).
     """
     yes_ask = _clamp(yes_ask)
     no_ask = _clamp(no_ask)
@@ -47,12 +47,12 @@ def nash_decision(
     market_implied = yes_ask
 
     if model_prob_yes is None:
-        # Mild shrink toward 0.5 — honest about uncertainty
-        shrink = 0.35
-        model_p = mid * (1 - shrink) + 0.5 * shrink
-        # Widen uncertainty if thin book
-        if volume < 50 and open_interest < 50:
-            model_p = 0.5 * 0.5 + model_p * 0.5
+        # Logistic scorer (app.strategy.model) replaces the old shrink prior.
+        from app.strategy.model import build_features, predict
+
+        spread_for_model = spread_cents if spread_cents is not None else abs((yes_ask + no_ask - 1.0) * 100)
+        market_p = _clamp((yes_ask + (1.0 - no_ask)) / 2.0)
+        model_p = predict(build_features(market_p, volume=volume, spread_cents=spread_for_model))
     else:
         model_p = _clamp(model_prob_yes)
 
