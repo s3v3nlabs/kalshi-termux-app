@@ -177,7 +177,8 @@ def snapshot_features(market: dict, snap: dict) -> dict:
     spread = (ya - yb) * 100.0
     now = datetime.fromisoformat(snap["snapshot_ts"])
     feats: dict[str, Any] = M.build_features(
-        market_p, close_time=market["close_time"], volume=snap["volume"], spread_cents=spread, now=now
+        market_p, close_time=market["close_time"], volume=snap["volume"], spread_cents=spread, now=now,
+        open_interest=snap.get("open_interest"),
     )
     for name in M.FEATURES:
         feats.setdefault(name, None)
@@ -282,12 +283,23 @@ def ingest_settled(
 # ----- training rows + chronological holdout -----
 
 
+def _backfill(r: dict) -> dict:
+    """Snapshots stored before a feature existed: rebuild what the snapshot
+    columns allow (flow_z from volume / OI). Context terms stay null."""
+    f = dict(r["features"])
+    if "flow_z" not in f:
+        f["flow_z"] = M.flow_z(r.get("snap_volume"), r.get("snap_oi"))
+    for name in M.FEATURES:
+        f.setdefault(name, None)
+    return f
+
+
 def training_rows(ledger, include_bets: bool = True) -> list[dict]:
     rows = [
         {
             "ticker": r["ticker"],
             "close_time": r["close_time"],
-            "features": r["features"],
+            "features": _backfill(r),
             "yes_outcome": 1 if r["result"] == "yes" else 0,
             "source": "settled_market",
             "horizon_h": r["horizon_h"],

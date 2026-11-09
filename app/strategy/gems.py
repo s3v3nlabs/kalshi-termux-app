@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Optional
 
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds
+from app.strategy.model import flow_z as _flow_z
 
 TIER_LOW_MAX = 3.0  # <= 3x  -> "2x"
 TIER_HIGH_MIN = 10.0  # >= 10x -> "13x"
@@ -27,6 +28,8 @@ GEM_MIN_COMPRESSION = 0.25  # spread <= 3 cents
 GEM_NASH_THRESHOLD = 0.4
 GEM_MIN_EDGE = 0.02  # model p - implied_prob
 DEFAULT_ODDS = 2.0
+# Informational only (not a gem check): volume at least 3x open interest.
+UNUSUAL_FLOW_RATIO = 3.0
 
 
 def spread_compression(spread_cents: float) -> float:
@@ -35,6 +38,10 @@ def spread_compression(spread_cents: float) -> float:
 
 def vol_oi_ratio(volume: float, open_interest: float) -> float:
     return float(volume or 0.0) / (float(open_interest or 0.0) + 1.0)
+
+
+def unusual_flow(ratio: float) -> bool:
+    return float(ratio) >= UNUSUAL_FLOW_RATIO
 
 
 def payout_odds(implied_prob: Optional[float]) -> float:
@@ -75,10 +82,13 @@ def gem_check(
         "beats_implied": edge >= GEM_MIN_EDGE,
         "positive_half_kelly": gk.fractional > 0,
     }
+    ratio = vol_oi_ratio(volume, open_interest)
     return {
         "spread_cents": round(float(spread_cents), 2),
         "spread_compression": round(comp, 4),
-        "vol_oi_ratio": round(vol_oi_ratio(volume, open_interest), 4),
+        "vol_oi_ratio": round(ratio, 4),
+        "flow_z": _flow_z(volume, open_interest),
+        "unusual_flow": unusual_flow(ratio),
         "implied_prob": None if implied_prob is None else round(float(implied_prob), 4),
         "payout_odds": round(odds, 4),
         "payout_tier": tier,
@@ -90,3 +100,44 @@ def gem_check(
         "checks": checks,
         "gem": all(checks.values()),
     }
+
+
+def suppress_paired_gems(rows: list[dict]) -> int:
+    """YES+NO sanity: at most one gem per event.
+
+    The untrained model flagged both sides of one (probably decided) NFL game:
+    team A's YES and team B's YES are two markets of the same event, i.e. the
+    two sides of one outcome. Within an event (``event_ticker``; the ticker
+    itself when absent) only the gem with the highest Nash payoff stays; ties go
+    to the higher payout, then the ticker. The rest lose the flag and say why.
+    Returns how many were suppressed.
+    """
+    groups: dict[str, list[dict]] = {}
+    for r in rows:
+        if r.get("gem"):
+            groups.setdefault(str(r.get("event_ticker") or r.get("ticker")), []).append(r)
+    dropped = 0
+    for event, members in groups.items():
+        if len(members) < 2:
+            continue
+        members.sort(
+            key=lambda r: (
+                float((r.get("gemini") or {}).get("nash_payoff") or 0.0),
+                float(r.get("best_payout_multiple") or 0.0),
+                str(r.get("ticker")),
+            ),
+            reverse=True,
+        )
+        keep = members[0]
+        for r in members[1:]:
+            r["gem"] = False
+            r["gem_status"] = None
+            r["gem_suppressed"] = {
+                "kept": keep.get("ticker"),
+                "event": event,
+                "reason": f"Same event as {keep.get('ticker')}, which has the higher Nash payoff. Only one side of an event is flagged.",
+            }
+            if isinstance(r.get("gemini"), dict):
+                r["gemini"]["gem"] = False
+            dropped += 1
+    return dropped

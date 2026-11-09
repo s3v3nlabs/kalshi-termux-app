@@ -352,7 +352,8 @@ details > summary { cursor: pointer; min-height: 32px; }
 .geo.ok { color: var(--green); border-color: rgba(52, 211, 153, 0.4); }
 .geo.blocked { color: var(--red); border-color: rgba(248, 113, 113, 0.45); }
 .buy-btn { min-height: 44px; width: 100%; padding: 6px 8px; }
-.feat { padding: 8px 10px 10px; }
+.feat { padding: 8px 10px 10px; overflow-y: auto; box-sizing: border-box; overscroll-behavior: contain; }
+.gem-note { margin: 6px 0 0; font-size: 0.72rem; line-height: 1.35; overflow-wrap: anywhere; }
 .feat-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.74rem; }
 .feat-table th, .feat-table td { text-align: right; padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .feat-table th:first-child, .feat-table td:first-child { text-align: left; color: var(--muted); }

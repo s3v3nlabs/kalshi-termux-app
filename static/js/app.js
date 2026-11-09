@@ -292,7 +292,7 @@ function baseRowH() {
   return isPhone() ? 128 : 48;
 }
 function detailH() {
-  return isPhone() ? 520 : 380;
+  return isPhone() ? 600 : 440;
 }
 function rowH(m) {
   return baseRowH() + (m.ticker === expandedTicker ? detailH() : 0);
@@ -306,20 +306,24 @@ function edgePP(m) {
   return (Number(md.p_yes) - Number(md.market_p_yes)) * 100;
 }
 
+const MODEL_FEATURES = ["market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z", "flow_z"];
+
 function featureBreakdown(m) {
   const md = m.model || {};
   const f = md.features || {};
   const w = scanWeights || {};
-  const names = ["market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z"];
+  // Order = w1..wN on the server (app/strategy/model.py FEATURES).
+  const names = MODEL_FEATURES;
   let z = Number(w.w0 || 0);
   const lines = names.map((n, i) => {
     const wi = Number(w["w" + (i + 1)] || 0);
     const x = Number(f[n] || 0);
     z += wi * x;
-    return `<tr><td>${n}</td><td>${x.toFixed(3)}</td><td>${wi.toFixed(3)}</td><td>${(wi * x).toFixed(3)}</td></tr>`;
+    const nul = f[n] == null ? " <small>(none → 0)</small>" : "";
+    return `<tr><td>${n}${nul}</td><td>${x.toFixed(3)}</td><td>${wi.toFixed(3)}</td><td>${(wi * x).toFixed(3)}</td></tr>`;
   });
   const p = 1 / (1 + Math.exp(-z));
-  return `<div class="feat">
+  return `<div class="feat" style="height:${detailH()}px">
     <table class="feat-table"><thead><tr><th>input</th><th>x</th><th>w</th><th>w·x</th></tr></thead>
     <tbody><tr><td>w0 (bias)</td><td>1</td><td>${Number(w.w0 || 0).toFixed(3)}</td><td>${Number(w.w0 || 0).toFixed(3)}</td></tr>
     ${lines.join("")}</tbody></table>
@@ -361,6 +365,7 @@ function gemBreakdown(m) {
     <table class="feat-table"><tbody>
       <tr><td>spread (¢)</td><td>${fmt(g.spread_cents, 2)}</td><td>spread_compression</td><td>${fmt(g.spread_compression)}</td></tr>
       <tr><td>vol_oi_ratio</td><td>${fmt(g.vol_oi_ratio, 3)}</td><td>implied_prob</td><td>${fmt(g.implied_prob)}</td></tr>
+      <tr><td>flow_z</td><td>${fmt(g.flow_z, 3)}</td><td>unusual flow (≥3x OI)</td><td>${g.unusual_flow ? "yes" : "no"}</td></tr>
       <tr><td>payout_odds</td><td>${fmt(g.payout_odds, 2)}x</td><td>payout_tier</td><td>${escapeHtml(g.payout_tier)}</td></tr>
       <tr><td>model p</td><td>${fmt(g.p)}</td><td>edge vs implied</td><td>${(g.edge_vs_implied * 100).toFixed(1)}pp</td></tr>
       <tr><td>nash_payoff</td><td>${fmt(g.nash_payoff)}</td><td>½-Kelly</td><td>${(g.half_kelly_fraction * 100).toFixed(2)}% · $${fmt(g.half_kelly_allocation, 2)}</td></tr>
@@ -368,7 +373,18 @@ function gemBreakdown(m) {
     <div class="gem-checks">${Object.keys(label)
       .map((k) => `<span class="${ck[k] ? "ok" : "no"}">${ck[k] ? "✓" : "✗"} ${label[k]}</span>`)
       .join("")}</div>
+    ${m.gem_suppressed ? `<p class="gem-note">✗ one gem per event: ${escapeHtml(m.gem_suppressed.reason || "")}</p>` : ""}
+    ${analogLine(m)}
   </div>`;
+}
+
+function analogLine(m) {
+  const a = m.analogs;
+  if (!a) return `<p class="gem-note muted">Analogs: no settled history loaded.</p>`;
+  const cls = a.analog_status === "ok" ? "" : " muted";
+  return `<p class="gem-note${cls}">${escapeHtml(a.analog_text || "")} <small>(tier ${escapeHtml(
+    (m.gemini && m.gemini.payout_tier) || ""
+  )}, min ${a.analog_min_n}; does not verify a gem)</small></p>`;
 }
 
 function scanRowHtml(m) {

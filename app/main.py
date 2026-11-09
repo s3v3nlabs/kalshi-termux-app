@@ -199,7 +199,11 @@ def api_scan(
             calib = ledger.calibration_sync()
         except Exception:
             calib = None  # treated as uncalibrated: Kelly halved
-        result = scan_opportunities(client, limit=limit, bankroll=bankroll, sort=sort_mode, calibration=calib)
+        from app.strategy.analogs import load_pool
+
+        result = scan_opportunities(
+            client, limit=limit, bankroll=bankroll, sort=sort_mode, calibration=calib, analog_pool=load_pool(ledger)
+        )
     except Exception as e:
         store.log_activity("error", f"Scan failed: {e}")
         raise HTTPException(502, str(e))

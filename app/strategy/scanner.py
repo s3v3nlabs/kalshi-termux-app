@@ -13,7 +13,8 @@ from app.strategy.espn import (
     select_nearby_games,
     us_today,
 )
-from app.strategy.gems import gem_check
+from app.strategy.analogs import annotate_rows
+from app.strategy.gems import gem_check, suppress_paired_gems
 from app.strategy.kelly import gemini_nash_payoff, kelly_from_payout_odds, kelly_size
 from app.strategy.model import build_features, load_model, predict
 from app.strategy.nash import mispricing_scores, nash_decision, nash_to_dict
@@ -304,6 +305,7 @@ def enrich_market(
         volume=vol,
         spread_cents=spread_cents,
         espn_p_yes=model_p_yes,
+        open_interest=oi,
     )
     model_w = weights if weights is not None else load_model()["weights"]
     logistic_p_yes = predict(logit_features, model_w)
@@ -512,8 +514,11 @@ def scan_opportunities(
     espn: Optional[EspnBoard] = None,
     include_game_series: bool = True,
     calibration: Optional[dict] = None,
+    analog_pool: Optional[list[dict]] = None,
 ) -> dict:
-    """``calibration`` is the ledger's /calibration payload. When it says the
+    """``analog_pool`` (``analogs.load_pool``) adds settled-analog stats per row.
+
+    ``calibration`` is the ledger's /calibration payload. When it says the
     model is uncalibrated (Brier > 0.25, or no settled bets yet) every row is
     flagged and Kelly is halved."""
     client = client or KalshiClient()
@@ -565,6 +570,10 @@ def scan_opportunities(
         else:
             espn_stats["fallback"] += 1
         enriched.append(row)
+    # YES+NO sanity: one gem per event at most (highest Nash payoff stays).
+    gems_suppressed = suppress_paired_gems(enriched)
+    if analog_pool is not None:
+        annotate_rows(enriched, analog_pool)
     espn_stats["fetch_ok"] = board.fetch_ok
     espn_stats["fetch_errors"] = board.fetch_errors
 
@@ -612,5 +621,7 @@ def scan_opportunities(
             "No 100% win-rate claim. Risk of loss."
         ),
         "espn": espn_stats,
+        "gems_suppressed": gems_suppressed,
+        "analog_pool_n": None if analog_pool is None else len(analog_pool),
         "markets": enriched,
     }

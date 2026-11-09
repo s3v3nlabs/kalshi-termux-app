@@ -1,6 +1,7 @@
 """Logistic scorer that replaces the old shrink-toward-50% prior.
 
     z = w0 + w1*market_edge + w2*time_to_close + w3*volume_z + w4*espn_delta + w5*spread_z
+          + w6*flow_z
     p = 1 / (1 + e^-z)          (P(YES), clamped to [0.01, 0.99])
 
 Feature definitions (simplest reading of the spec; see BUILD_NOTES):
@@ -9,6 +10,8 @@ Feature definitions (simplest reading of the spec; see BUILD_NOTES):
   volume_z      = (log1p(volume) - 6) / 3      — fixed reference, no batch stats needed
   espn_delta    = logit(ESPN P(YES)) - logit(market P(YES)), 0 when no ESPN match
   spread_z      = (spread_cents - 3) / 3
+  flow_z        = log1p(volume / (open_interest + 1)) - ln 2, clipped to [-3, 3]
+                  (unusual flow: 0 when volume = open interest; 0 when OI unknown)
 
 Weights start at 0.1 (``model_weights.json`` in this folder). Refits are
 written to ``data/model_weights.json`` (gitignored) and win over the default.
@@ -26,8 +29,9 @@ from app.config import settings
 
 log = logging.getLogger("kalshi.model")
 
-FEATURES = ("market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z")
-WEIGHT_KEYS = ("w0", "w1", "w2", "w3", "w4", "w5")
+FEATURES = ("market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z", "flow_z")
+WEIGHT_KEYS = ("w0",) + tuple(f"w{i}" for i in range(1, len(FEATURES) + 1))
+FLOW_REF = math.log(2.0)
 DEFAULT_WEIGHTS_PATH = Path(__file__).with_name("model_weights.json")
 REFIT_INTERVAL = timedelta(days=7)
 MIN_REFIT_SAMPLES = 5
@@ -75,6 +79,7 @@ def build_features(
     spread_cents: float = 0.0,
     espn_p_yes: Optional[float] = None,
     now: Optional[datetime] = None,
+    open_interest: Optional[float] = None,
 ) -> dict[str, float]:
     m = logit(market_prob)
     return {
@@ -83,7 +88,20 @@ def build_features(
         "volume_z": round((math.log1p(max(0.0, float(volume or 0))) - 6.0) / 3.0, 6),
         "espn_delta": round(logit(espn_p_yes) - m, 6) if espn_p_yes is not None else 0.0,
         "spread_z": round((float(spread_cents or 0) - 3.0) / 3.0, 6),
+        "flow_z": flow_z(volume, open_interest),
     }
+
+
+def vol_oi_ratio(volume: Any, open_interest: Any) -> float:
+    return float(volume or 0.0) / (float(open_interest or 0.0) + 1.0)
+
+
+def flow_z(volume: Any, open_interest: Optional[float]) -> float:
+    """Unusual flow on a fixed reference (no batch stats): ratio 1 -> 0."""
+    if open_interest is None:
+        return 0.0
+    z = math.log1p(max(0.0, vol_oi_ratio(volume, open_interest))) - FLOW_REF
+    return round(max(-3.0, min(3.0, z)), 6)
 
 
 START_WEIGHT = 0.1
