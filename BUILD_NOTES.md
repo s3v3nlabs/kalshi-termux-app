@@ -306,3 +306,12 @@ Requested by the account owner: more speed, but no risk of a ban. Kalshi limits 
 - The result is cached for `EXCHANGE_STATUS_TTL_S` (15 s), or 5 s after an error. `/api/status` now reads the cached value instead of making a fresh REST call on every poll, which saves read tokens. **Fails closed:** if the status can't be read, no automated orders go out. Manual taps are unchanged, and Kalshi rejects them itself when trading is closed.
 - UI: the exchange badge shows **TRADING PAUSED** when the exchange is up but trading is off. `GET /api/exchange?refresh=1`.
 - Tests: `tests/test_exchange_gate.py` (4) cover open/paused/maintenance, the cache TTL, fail-closed on error, the auto-bet cycle waiting and then resuming, and the endpoint/status wiring.
+
+### 4. API tier: show it, optionally claim the free Advanced upgrade (`app/kalshi/tier.py`)
+
+- **Docs:** `POST /account/api_usage_level/upgrade` grants a **permanent Advanced** grant (read 300/s, write 300/s instead of Basic's 200/100; write burst 3 s) if at least one of your last 100 Predictions orders was placed through the API. It returns 403 otherwise and costs 30 Write tokens. Higher tiers (Expert and up) come only from trading volume, reviewed daily by Kalshi. This upgrade is Kalshi's own sanctioned path to more throughput.
+- **Settings → Speed card:** shows the price-feed state and the current tier with approximate reads/s and orders/s at the app's 85% safety factor (from `GET /account/limits` with keys, else Basic defaults). It has an **Upgrade API tier to Advanced (free)** button (disabled without keys or above Basic) and an **Auto-upgrade tier** toggle (OFF by default).
+- **Once-only behaviour:** the app never posts the upgrade without keys or once the tier is above Basic. The button has a 10-minute cooldown, and the background retry runs at most every 6 h (in the 6-hourly budget refresh). After a successful LIVE order from this app, the auto toggle tries once more, because an API order now exists. A 403 is explained in plain words. Success re-reads `/account/limits` and resizes the shared budget immediately.
+- Endpoints: `GET /api/limits[?refresh=1]`, `POST /api/limits/upgrade`, `POST /api/limits/auto {"enabled": bool}`.
+- Not verified live (no key in the sandbox). The public `/account/endpoint_costs` read was verified live on Nov 9 2026.
+- Tests: `tests/test_tier.py` (5) cover no keys → no call, upgrade once then "already", 403 message + cooldown, auto only when toggled, and the endpoints.

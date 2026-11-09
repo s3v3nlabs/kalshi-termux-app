@@ -67,6 +67,8 @@ async def _budget_loop() -> None:
         try:
             _BUDGET_LOAD.clear()
             _BUDGET_LOAD.update(await ac.load_budget())
+            # Optional free Advanced upgrade (Settings toggle, OFF by default).
+            _BUDGET_LOAD["auto_upgrade"] = await asyncio.to_thread(tier.maybe_auto_upgrade)
         except Exception as exc:  # pragma: no cover - load_budget catches
             _BUDGET_LOAD["errors"] = [str(exc)]
         finally:
@@ -117,6 +119,9 @@ client = KalshiClient()
 orders = OrderGate(store, client, ledger)
 
 from app.trading.exchange_gate import ExchangeGate  # noqa: E402
+from app.kalshi.tier import TierManager  # noqa: E402
+
+tier = TierManager(store, lambda: client, lambda: settings.has_keys)
 
 # trading_active gate for automated orders (cached 15 s, fails closed).
 exchange_gate = ExchangeGate(lambda: client.exchange_status())
@@ -287,6 +292,32 @@ def api_status():
         "exchange_error": err,
         "disclaimer": "Not financial advice. No guaranteed win rate. Risk of loss.",
     }
+
+
+class AutoTierBody(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/limits")
+def api_limits(refresh: bool = False):
+    """Usage tier + read/write token buckets (GET /account/limits with keys)."""
+    return {**tier.limits(refresh=bool(refresh)), **tier.status(), "budget_load": {k: v for k, v in _BUDGET_LOAD.items() if k != "limits"}}
+
+
+@app.post("/api/limits/upgrade")
+def api_limits_upgrade():
+    """One call to POST /account/api_usage_level/upgrade (free Advanced tier)."""
+    return tier.upgrade()
+
+
+@app.post("/api/limits/auto")
+def api_limits_auto(body: AutoTierBody):
+    tier.set_auto(body.enabled)
+    store.log_activity("settings", "Auto tier upgrade ON" if body.enabled else "Auto tier upgrade OFF")
+    out = {"ok": True, **tier.status()}
+    if body.enabled:
+        out["attempt"] = tier.maybe_auto_upgrade()
+    return out
 
 
 @app.get("/api/exchange")
@@ -789,6 +820,11 @@ def trading_order(body: OrderBody, request: Request):
         coherence=body.coherence,
         order_type=body.order_type,
     )
+    if result.get("ok") and not result.get("dry_run"):
+        try:  # an API order now exists: the free Advanced upgrade can succeed
+            tier.maybe_auto_upgrade(cooldown_s=60)
+        except Exception:
+            pass
     return result
 
 

@@ -42,6 +42,7 @@ function showPanel(name) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.panel === name));
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "panel-" + name));
   window.scrollTo({ top: 0, behavior: "smooth" });
+  if (name === "settings") refreshSpeed();
 }
 $$("#nav button[data-panel]").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1701,8 +1702,55 @@ if (!localStorage.getItem("kalshi_howto_seen")) {
   localStorage.setItem("kalshi_howto_seen", "1");
 }
 
+/* speed: API tier + feed */
+function tierText(l) {
+  const t = (l.usage_tier || "basic").toString();
+  const b = l.budget || {};
+  const r = b.read || {}, w = b.write || {};
+  const per = (x) => (x.refill_per_s ? Math.round(x.refill_per_s / (b.default_cost || 10)) : "?");
+  let s = `API tier: ${t.charAt(0).toUpperCase() + t.slice(1)} · ~${per(r)} reads/s · ~${per(w)} orders/s (85% of Kalshi's limit)`;
+  if (!l.has_keys) s += " · add your key to read your real tier";
+  if (l.error) s += ` · ${l.error}`;
+  return s;
+}
+async function refreshSpeed() {
+  try {
+    const l = await api("/api/limits");
+    $("#tier-out").textContent = tierText(l);
+    $("#auto-tier").checked = Boolean(l.auto_upgrade);
+    const up = $("#btn-tier-upgrade");
+    const basic = (l.usage_tier || "basic") === "basic";
+    up.disabled = !l.has_keys || !basic;
+    up.title = !l.has_keys ? "Add your Kalshi key first" : basic ? "" : "Already above Basic";
+    const st = (lastStatus && lastStatus.stream) || {};
+    $("#feed-out").textContent = `Price feed: ${st.live ? "LIVE (WebSocket push)" : "polling (REST)"} · ${st.reason || ""}`;
+  } catch (e) {
+    $("#tier-out").textContent = "API tier: " + e.message;
+  }
+}
+$("#btn-tier-upgrade")?.addEventListener("click", async () => {
+  const btn = $("#btn-tier-upgrade");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/limits/upgrade", { method: "POST" });
+    toast(r.ok ? r.message || "Upgraded" : r.error);
+  } catch (e) {
+    toast(e.message);
+  }
+  refreshSpeed();
+});
+$("#auto-tier")?.addEventListener("change", async (ev) => {
+  try {
+    const r = await api("/api/limits/auto", { method: "POST", body: JSON.stringify({ enabled: ev.target.checked }) });
+    if (r.attempt && r.attempt.error) toast(r.attempt.error);
+  } catch (e) {
+    toast(e.message);
+  }
+  refreshSpeed();
+});
+
 updatePreview();
-refreshStatus().then(refreshStripMoney);
+refreshStatus().then(refreshStripMoney).then(refreshSpeed);
 refreshAuto();
 runScan(false);
 refreshActivity();

@@ -580,3 +580,4 @@ img, svg, table { max-width: 100%; }
 .research-box { max-width: 100%; overflow-x: hidden; }
 .research-box .gem-note.neg { color: var(--red); }
 .research-box .gem-note.muted { color: var(--muted); }
+p.small { font-size: 0.78rem; margin-top: 8px; }
