@@ -315,3 +315,10 @@ Requested by the account owner: more speed, but no risk of a ban. Kalshi limits 
 - Endpoints: `GET /api/limits[?refresh=1]`, `POST /api/limits/upgrade`, `POST /api/limits/auto {"enabled": bool}`.
 - Not verified live (no key in the sandbox). The public `/account/endpoint_costs` read was verified live on Nov 9 2026.
 - Tests: `tests/test_tier.py` (5) cover no keys → no call, upgrade once then "already", 403 message + cooldown, auto only when toggled, and the endpoints.
+
+### 5. Ed25519 alongside RSA-PSS (`app/kalshi/signing.py`)
+
+- **Docs (api_keys, Nov 9 2026):** the pre-sign text is `timestamp_ms + METHOD + path` (query stripped, body not signed) for both key types. Ed25519 (Kalshi's default for new keys) signs it directly. RSA uses PSS with SHA-256, MGF1-SHA-256 and salt = digest length. WebSocket handshakes sign `GET /trade-api/ws/v2`.
+- **How the type is detected:** both key types usually arrive as `-----BEGIN PRIVATE KEY-----` (PKCS#8), so the header can't identify them. The app parses the PEM and checks the key object (`key_type_of`), and the sync REST client, async client and both WebSocket connections sign through the same `sign_text`.
+- `/api/status` now reports `key_type` (`ed25519` / `rsa` / null; cached by file mtime, never key material), and Settings → Speed shows "Key signing: Ed25519 / RSA-PSS / none". Saving a key in Settings already reported the detected type.
+- Tests: `tests/test_signing.py` (7) generate both key types and verify REST, WS and sync-client signatures with the public key. They also check that the same PEM header gives correct detection and that bad or missing files return None.

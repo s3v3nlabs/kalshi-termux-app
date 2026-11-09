@@ -25,6 +25,7 @@ from app.kalshi.client import (
     MAX_CONTRACTS_PER_ORDER,
     KalshiClient,
     detect_key_type,
+    key_type_of_file,
     friendly_order_error,
     summarize_positions,
 )
@@ -257,6 +258,23 @@ def _balance_dollars(data: dict) -> Any:
 
 # ---------- health / status ----------
 
+_KEY_TYPE_CACHE: dict = {}
+
+
+def _key_type() -> Optional[str]:
+    """"ed25519" / "rsa" / None for the configured key file (cached by mtime)."""
+    p = settings.key_path
+    try:
+        mt = p.stat().st_mtime if settings.has_keys and p.is_file() else None
+    except OSError:
+        mt = None
+    if mt is None:
+        return None
+    if _KEY_TYPE_CACHE.get("k") != (str(p), mt):
+        _KEY_TYPE_CACHE.update(k=(str(p), mt), t=key_type_of_file(p))
+    return _KEY_TYPE_CACHE.get("t")
+
+
 @app.get("/api/status")
 def api_status():
     # Cached exchange status (shared with the auto-bet/sniper gate) instead of
@@ -278,6 +296,7 @@ def api_status():
         "hosts_available": list(HOSTS.keys()),
         "has_keys": settings.has_keys,
         "key_path_exists": settings.key_path.is_file(),
+        "key_type": _key_type(),
         "dry_run": bool(settings.dry_run),
         "dry_run_env": bool(settings.env_dry_run),
         "order_gate": gate,

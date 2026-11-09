@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from app.config import settings
 from app.kalshi.budget import KalshiBudget, get_budget
 from app.kalshi.rate_limit import TokenBucketManager
-from app.kalshi.signing import sign_text
+from app.kalshi.signing import key_type_of, sign_text
 
 # Create Order (V2). The legacy POST /portfolio/orders path returns HTTP 410
 # deprecated_v1_order_endpoint. Reads stay on /portfolio/orders.
@@ -335,11 +335,15 @@ def detect_key_type(pem: str) -> Optional[str]:
         key = serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
     except (ValueError, TypeError):
         return None
-    if isinstance(key, Ed25519PrivateKey):
-        return "ed25519"
-    if isinstance(key, rsa.RSAPrivateKey):
-        return "rsa"
-    return None
+    return key_type_of(key)
+
+
+def key_type_of_file(path) -> Optional[str]:
+    """Key type of a PEM file on disk (None if missing/unreadable). Never returns key material."""
+    try:
+        return detect_key_type(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def _fp(value: Any) -> Optional[float]:

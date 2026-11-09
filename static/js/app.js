@@ -1723,7 +1723,9 @@ async function refreshSpeed() {
     up.disabled = !l.has_keys || !basic;
     up.title = !l.has_keys ? "Add your Kalshi key first" : basic ? "" : "Already above Basic";
     const st = (lastStatus && lastStatus.stream) || {};
-    $("#feed-out").textContent = `Price feed: ${st.live ? "LIVE (WebSocket push)" : "polling (REST)"} · ${st.reason || ""}`;
+    const kt = lastStatus && lastStatus.key_type;
+    const kl = kt === "ed25519" ? "Ed25519" : kt === "rsa" ? "RSA-PSS" : "none";
+    $("#feed-out").textContent = `Price feed: ${st.live ? "LIVE (WebSocket push)" : "polling (REST)"}${st.reason ? " · " + st.reason : ""} · Key signing: ${kl}`;
   } catch (e) {
     $("#tier-out").textContent = "API tier: " + e.message;
   }
