@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app import __version__
+from app import geo
 from app.config import HOSTS, settings
 from app.db.ledger import Ledger, settle_open_bets
 from app.db.store import Store
@@ -149,8 +150,23 @@ def api_ping():
 
 # ---------- markets ----------
 
+def _apply_geo(result: dict, state: Optional[str]) -> dict:
+    """Annotate rows (not cached: depends on the caller's state)."""
+    out = dict(result)
+    rows = []
+    blocked = 0
+    for row in result.get("markets") or []:
+        g = geo.check(row.get("ticker") or "", state)
+        blocked += 0 if g["allowed"] else 1
+        rows.append({**row, "geo": g})
+    out["markets"] = rows
+    out["geo"] = {"state": state, "blocked": blocked}
+    return out
+
+
 @app.get("/api/markets/scan")
 def api_scan(
+    request: Request,
     limit: int = 100,
     bankroll: float = 1000.0,
     refresh: bool = False,
@@ -164,7 +180,7 @@ def api_scan(
         cached = store.cache_get(cache_key)
         if cached:
             cached["from_cache"] = True
-            return cached
+            return _apply_geo(cached, geo.state_for_request(request))
     try:
         try:
             calib = ledger.calibration_sync()
@@ -184,17 +200,18 @@ def api_scan(
         "scan",
         f"Scanned {result['scanned']} markets → {result['count']} enriched via {result['host']}",
     )
-    return result
+    return _apply_geo(result, geo.state_for_request(request))
 
 
 @app.get("/scanner")
-def scanner(limit: int = 100, bankroll: float = 1000.0, refresh: bool = False):
+def scanner(request: Request, limit: int = 100, bankroll: float = 1000.0, refresh: bool = False):
     """Scanner ranked by softmax-equilibrium mispricing score."""
-    return api_scan(limit=limit, bankroll=bankroll, refresh=refresh, sort="mispricing")
+    return api_scan(request, limit=limit, bankroll=bankroll, refresh=refresh, sort="mispricing")
 
 
 @app.get("/api/markets/{ticker}")
-def api_market(ticker: str, bankroll: float = 1000.0):
+def api_market(ticker: str, request: Request, bankroll: float = 1000.0):
+    gate_geo = geo.check(ticker, geo.state_for_request(request))
     try:
         raw = client.get_market(ticker)
         market = raw.get("market") or raw
@@ -210,6 +227,7 @@ def api_market(ticker: str, bankroll: float = 1000.0):
             "raw": market,
             "enriched": enriched,
             "orderbook": ob,
+            "geo": gate_geo,
         }
     except Exception as e:
         raise HTTPException(502, str(e))
@@ -459,7 +477,11 @@ def trading_disarm():
 
 
 @app.post("/api/trading/order")
-def trading_order(body: OrderBody):
+def trading_order(body: OrderBody, request: Request):
+    gate_geo = geo.check(body.ticker.strip(), geo.state_for_request(request))
+    if not gate_geo["allowed"]:
+        store.log_activity("geo", gate_geo["reason"], {"ticker": body.ticker})
+        raise HTTPException(403, gate_geo["reason"])
     if not orders.dry_run:
         if body.confirm_live != "PLACE LIVE ORDER":
             raise HTTPException(

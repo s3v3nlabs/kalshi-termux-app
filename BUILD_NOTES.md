@@ -137,3 +137,12 @@ Decisions below are the simplest option that meets each item; revisit if needed.
 - `mispricing = |nash_prob − market_prob|` (market_prob = book mid). Rows outside the top 10 get `nash_prob`/`mispricing` = null.
 - **Scanner default sort is now `mispricing`** (scored rows first, biggest mispricing first, the rest in payout order). This replaces the earlier "highest payout first" default because the Architect plan says to rank by mispricing; `sort=payout` and `sort=score` still work. `GET /scanner` = scan ranked by mispricing.
 - Backtest gate: item 5 does not change model probabilities, so fixture Brier is unchanged (0.223942).
+
+### 6. Geo-gate (`app/geo.py`, `app/geo_config.json`)
+
+- Config maps all 50 states + DC to `{sports: bool}`; `UT, MI, NV, OH, NY, AZ, MD, MT` are `false`.
+- Client IP = first `X-Forwarded-For` entry, else the socket peer. **No online IP lookup** (privacy, no phone-home): state comes from `ip_ranges` (CIDR → state, empty by default), or for loopback/private IPs from `GEO_LOCAL_STATE` env / `local_state`.
+- **Fail closed:** unresolved IP, unknown state, missing/bad config → sports tickers blocked. Out of the box `local_state` is null, so a phone on `127.0.0.1` sees sports rows blocked until you set `GEO_LOCAL_STATE=PA` (your state) in `.env` or the config. Non-sports markets are never blocked.
+- Sports ticker = ESPN full-game series (`KXNFLGAME`…) or a `sports_prefixes` match.
+- Scan rows get a `geo` object (`allowed`, `state`, `reason`) and stay visible so the UI can dim them; orders on a blocked sports ticker return HTTP 403 with the reason (paper and live alike). `/api/markets/{ticker}` returns `geo` too.
+- XFF is client-controlled without a trusted proxy; this is a compliance guard, not anti-spoofing.

@@ -1,0 +1,179 @@
+{
+  "_note": "Sports-contract availability by US state. false = sports tickers blocked. Unknown or unresolved state = blocked (fail closed). local_state applies to loopback/private IPs (e.g. Termux on 127.0.0.1); set it to your state code or GEO_LOCAL_STATE env var. ip_ranges maps CIDR -> state for public IPs; empty by default (no online lookup).",
+  "local_state": null,
+  "ip_ranges": {},
+  "sports_prefixes": [
+    "KXNFL",
+    "KXNBA",
+    "KXWNBA",
+    "KXMLB",
+    "KXNHL",
+    "KXNCAA",
+    "KXMLS",
+    "KXEPL",
+    "KXUCL",
+    "KXUFC",
+    "KXPGA",
+    "KXATP",
+    "KXWTA",
+    "KXF1",
+    "KXNASCAR",
+    "KXBOX",
+    "KXSOCCER"
+  ],
+  "states": {
+    "AL": {
+      "sports": true
+    },
+    "AK": {
+      "sports": true
+    },
+    "AZ": {
+      "sports": false
+    },
+    "AR": {
+      "sports": true
+    },
+    "CA": {
+      "sports": true
+    },
+    "CO": {
+      "sports": true
+    },
+    "CT": {
+      "sports": true
+    },
+    "DE": {
+      "sports": true
+    },
+    "DC": {
+      "sports": true
+    },
+    "FL": {
+      "sports": true
+    },
+    "GA": {
+      "sports": true
+    },
+    "HI": {
+      "sports": true
+    },
+    "ID": {
+      "sports": true
+    },
+    "IL": {
+      "sports": true
+    },
+    "IN": {
+      "sports": true
+    },
+    "IA": {
+      "sports": true
+    },
+    "KS": {
+      "sports": true
+    },
+    "KY": {
+      "sports": true
+    },
+    "LA": {
+      "sports": true
+    },
+    "ME": {
+      "sports": true
+    },
+    "MD": {
+      "sports": false
+    },
+    "MA": {
+      "sports": true
+    },
+    "MI": {
+      "sports": false
+    },
+    "MN": {
+      "sports": true
+    },
+    "MS": {
+      "sports": true
+    },
+    "MO": {
+      "sports": true
+    },
+    "MT": {
+      "sports": false
+    },
+    "NE": {
+      "sports": true
+    },
+    "NV": {
+      "sports": false
+    },
+    "NH": {
+      "sports": true
+    },
+    "NJ": {
+      "sports": true
+    },
+    "NM": {
+      "sports": true
+    },
+    "NY": {
+      "sports": false
+    },
+    "NC": {
+      "sports": true
+    },
+    "ND": {
+      "sports": true
+    },
+    "OH": {
+      "sports": false
+    },
+    "OK": {
+      "sports": true
+    },
+    "OR": {
+      "sports": true
+    },
+    "PA": {
+      "sports": true
+    },
+    "RI": {
+      "sports": true
+    },
+    "SC": {
+      "sports": true
+    },
+    "SD": {
+      "sports": true
+    },
+    "TN": {
+      "sports": true
+    },
+    "TX": {
+      "sports": true
+    },
+    "UT": {
+      "sports": false
+    },
+    "VT": {
+      "sports": true
+    },
+    "VA": {
+      "sports": true
+    },
+    "WA": {
+      "sports": true
+    },
+    "WV": {
+      "sports": true
+    },
+    "WI": {
+      "sports": true
+    },
+    "WY": {
+      "sports": true
+    }
+  }
+}
