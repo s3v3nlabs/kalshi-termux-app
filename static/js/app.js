@@ -87,6 +87,7 @@ function paintArmStrip() {
   $("#strip-arm-totp").classList.toggle("hidden", armed || !s.totp_configured);
   $("#strip-disarm").classList.toggle("hidden", !armed);
   $("#strip-arm").title = s.dry_run ? "Allow live trading in Settings first" : "Arms real orders for this session";
+  if (typeof refreshAuto === "function") refreshAuto();
 }
 
 async function refreshStripMoney() {
@@ -133,6 +134,68 @@ $("#strip-disarm").addEventListener("click", async () => {
   refreshStatus();
 });
 setInterval(() => document.visibilityState === "visible" && refreshStripMoney(), 30000);
+
+/* ---------- Auto-bet switch (strip) ---------- */
+let autoStatus = null;
+
+function signedMoney(v) {
+  const n = Number(v || 0);
+  return (n < 0 ? "−$" : "+$") + Math.abs(n).toFixed(2);
+}
+
+function paintAuto() {
+  const a = autoStatus;
+  if (!a) return;
+  const btn = $("#strip-auto");
+  const live = a.enabled && a.mode === "live";
+  btn.className = "auto-toggle " + (a.enabled ? "on" : "off") + (live ? " live" : "");
+  btn.setAttribute("aria-checked", String(Boolean(a.enabled)));
+  $("#strip-auto-state").textContent = a.enabled ? (live ? "ON · LIVE" : "ON · PAPER") : "OFF";
+  const lc = a.last_cycle;
+  const p = a.pnl || {};
+  const parts = [];
+  parts.push(a.enabled ? (live ? "real money" : "simulating") : "off");
+  parts.push(`${a.orders_today} today`);
+  parts.push(`P&L ${signedMoney(p.realized_total)}`);
+  if (p.open_n) parts.push(`${p.open_n} open $${Number(p.open_stake || 0).toFixed(2)}`);
+  if (lc) parts.push(`last ${fmtTs(lc.ts)}${lc.error ? " ERR" : ` +${lc.placed}`}`);
+  const stat = $("#strip-auto-stat");
+  stat.textContent = parts.join(" · ");
+  stat.className = Number(p.realized_total) < 0 ? "neg" : Number(p.realized_total) > 0 ? "pos" : "";
+  stat.title = lc && lc.error ? lc.error : a.note || "";
+  syncStripHeight();
+}
+
+async function refreshAuto() {
+  try {
+    autoStatus = await api("/api/autobet");
+    paintAuto();
+  } catch {}
+}
+
+$("#strip-auto").addEventListener("click", async () => {
+  const turnOn = !(autoStatus && autoStatus.enabled);
+  // One tap. OFF is applied before anything else so it stops at once.
+  if (autoStatus) {
+    autoStatus.enabled = turnOn;
+    paintAuto();
+  }
+  try {
+    autoStatus = await api("/api/autobet", { method: "POST", body: JSON.stringify({ enabled: turnOn }) });
+    paintAuto();
+    toast(
+      turnOn
+        ? autoStatus.mode === "live"
+          ? "Auto-bet ON — placing real orders"
+          : "Auto-bet ON — paper simulation (ARM LIVE for real orders)"
+        : "Auto-bet OFF"
+    );
+  } catch (e) {
+    toast(e.message);
+    refreshAuto();
+  }
+});
+setInterval(() => document.visibilityState === "visible" && refreshAuto(), 5000);
 
 function paintMode(s) {
   const gate = s.order_gate || {};
@@ -908,7 +971,12 @@ async function refreshCalibration() {
   }
 }
 setInterval(() => panelVisible("calibration") && refreshCalibration(), 30000);
-$$('#nav button[data-panel="calibration"]').forEach((b) => b.addEventListener("click", refreshCalibration));
+$$('#nav button[data-panel="calibration"]').forEach((b) =>
+  b.addEventListener("click", () => {
+    refreshCalibration();
+    refreshTraining();
+  })
+);
 
 /* ---------- Bet log (operator console, screen 3) ---------- */
 let allBets = [];
@@ -1113,6 +1181,20 @@ function paintTraining(t) {
   $("#train-meta").textContent = `${trainLine(t)} · ${lt.reason || ""} · model v${t.model_version} · ${t.model_runs} model_runs · calibration n ${
     c.n ?? 0
   }/${c.min_n ?? "—"}`;
+  const ln = t.learner;
+  const ll = $("#calib-learn");
+  if (ll && ln) {
+    const lr = ln.last_run || {};
+    const tr = lr.train || {};
+    const b = ln.holdout_brier == null ? "—" : Number(ln.holdout_brier).toFixed(4);
+    ll.textContent = `Continuous learning ${ln.enabled ? "every " + ln.interval_h + " h" : "OFF"}${ln.running ? " · running now" : ""} · last run ${
+      lr.ts ? fmtTs(lr.ts) : "never"
+    } (+${(lr.ingest || {}).stored ?? 0} settled, ${lr.bets_settled ?? 0} bets settled) · last train ${
+      ln.last_training_ts ? fmtTs(ln.last_training_ts) : "never"
+    } · holdout Brier ${b} · model v${ln.model_version} · ${tr.promoted ? "promoted" : "kept weights"}${
+      ln.next_run ? " · next " + fmtTs(ln.next_run) : ""
+    }`;
+  }
   const cl = $("#calib-train");
   if (cl) cl.textContent = `Training: ${s.markets ?? 0} settled markets · ${trainLine(t)}. Calibration (settled bets) still decides ◆ GEM vs ◆ GEM?.`;
 }
@@ -1561,6 +1643,7 @@ if (!localStorage.getItem("kalshi_howto_seen")) {
 
 updatePreview();
 refreshStatus().then(refreshStripMoney);
+refreshAuto();
 runScan(false);
 refreshActivity();
 setInterval(refreshStatus, 30000);

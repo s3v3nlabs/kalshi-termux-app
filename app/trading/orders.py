@@ -20,7 +20,7 @@ class OrderGate:
         self.ledger = ledger
         self._live_armed = False
 
-    def _record_fill(self, ticker: str, side: str, contracts: float, price: float) -> Optional[int]:
+    def _record_fill(self, ticker: str, side: str, contracts: float, price: float, source: str = "manual") -> Optional[int]:
         """Write a bets row for a fill. Model prob = latest model run for the ticker."""
         if self.ledger is None or contracts <= 0 or not 0 < price < 1:
             return None
@@ -37,6 +37,7 @@ class OrderGate:
                 stake=round(contracts * price, 6),
                 model_prob=model_prob,
                 market_prob=price,
+                source=source,
             )
         except Exception as exc:  # ledger trouble must never block an order result
             self.store.log_activity("error", f"Could not record bet: {exc}")
@@ -107,6 +108,7 @@ class OrderGate:
         price_cents: Optional[int] = None,
         coherence: Optional[float] = None,
         order_type: str = "limit",
+        source: str = "manual",
     ) -> dict:
         """Buy YES or NO. ``price_cents`` is the max you will pay (required).
 
@@ -163,7 +165,7 @@ class OrderGate:
             )
             # Paper bets are recorded as filled at the max price so the model
             # can be calibrated without spending money (see BUILD_NOTES).
-            bet_id = self._record_fill(ticker, side, float(count), price)
+            bet_id = self._record_fill(ticker, side, float(count), price, source=source)
             msg = (
                 f"Paper bet: would BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢ "
                 f"(max ${cost:.2f}). Not sent to Kalshi."
@@ -228,7 +230,7 @@ class OrderGate:
             elif side == "no":
                 # V2 reports the YES-book price; a NO buyer paid 1 - that.
                 fill_px = round(1.0 - fill_px, 6)
-            bet_id = self._record_fill(ticker, side, filled_n, fill_px)
+            bet_id = self._record_fill(ticker, side, filled_n, fill_px, source=source)
         msg = f"[LIVE] Sent BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢"
         if filled is not None:
             msg += f" · filled {filled}, resting {remaining}"

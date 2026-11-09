@@ -94,6 +94,22 @@ CREATE TABLE IF NOT EXISTS research_cache (
     created_at TEXT NOT NULL,
     expires_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS auto_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    event_ticker TEXT,
+    side TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    price_cents INTEGER NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    ev REAL,
+    order_log_id INTEGER,
+    bet_id INTEGER,
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_auto_orders_ts ON auto_orders(ts);
 CREATE TABLE IF NOT EXISTS calibration (
     bucket TEXT PRIMARY KEY,
     predicted REAL NOT NULL,
@@ -161,6 +177,10 @@ class Ledger:
         cols = {r[1] for r in await cur.fetchall()}
         if "kind" not in cols:
             await conn.execute("ALTER TABLE model_runs ADD COLUMN kind TEXT DEFAULT 'scan'")
+        cur = await conn.execute("PRAGMA table_info(bets)")
+        if "source" not in {r[1] for r in await cur.fetchall()}:
+            # 'manual' (tapped in the UI) or 'auto' (Auto-bet engine).
+            await conn.execute("ALTER TABLE bets ADD COLUMN source TEXT DEFAULT 'manual'")
         cur = await conn.execute("SELECT value FROM ledger_meta WHERE key='model_runs_compacted_v1'")
         if await cur.fetchone() is None:
             await conn.execute(COMPACT_SQL)
@@ -409,6 +429,7 @@ class Ledger:
         model_prob: Optional[float],
         market_prob: Optional[float],
         ts: Optional[str] = None,
+        source: str = "manual",
     ) -> int:
         side = side.lower()
         if side not in {"yes", "no"}:
@@ -418,9 +439,9 @@ class Ledger:
         conn = await self._db()
         try:
             cur = await conn.execute(
-                "INSERT INTO bets(ticker, side, price, stake, model_prob, market_prob, outcome, pnl, ts) "
-                "VALUES(?,?,?,?,?,?,NULL,NULL,?)",
-                (ticker, side, float(price), float(stake), model_prob, market_prob, ts or _now()),
+                "INSERT INTO bets(ticker, side, price, stake, model_prob, market_prob, outcome, pnl, ts, source) "
+                "VALUES(?,?,?,?,?,?,NULL,NULL,?,?)",
+                (ticker, side, float(price), float(stake), model_prob, market_prob, ts or _now(), source or "manual"),
             )
             await conn.commit()
             return int(cur.lastrowid)
@@ -519,7 +540,68 @@ class Ledger:
             "min_n": MIN_CALIBRATION_N,
         }
 
+    # ----- auto-bet order log -----
+
+    async def add_auto_order(self, row: dict) -> int:
+        conn = await self._db()
+        try:
+            cur = await conn.execute(
+                "INSERT INTO auto_orders(ts, ticker, event_ticker, side, count, price_cents, mode, status, ev, order_log_id, bet_id, detail) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    row.get("ts") or _now(), row["ticker"], row.get("event_ticker"), row["side"], int(row["count"]),
+                    int(row["price_cents"]), row["mode"], row["status"], row.get("ev"), row.get("order_log_id"),
+                    row.get("bet_id"), json.dumps(row.get("detail")) if row.get("detail") is not None else None,
+                ),
+            )
+            await conn.commit()
+            return int(cur.lastrowid)
+        finally:
+            await conn.close()
+
+    async def auto_orders(self, since: Optional[str] = None, limit: int = 200) -> list[dict]:
+        sql, args = "SELECT * FROM auto_orders", []
+        if since:
+            sql += " WHERE ts >= ?"
+            args.append(since)
+        conn = await self._db()
+        try:
+            cur = await conn.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, int(limit)))
+            rows = [dict(r) for r in await cur.fetchall()]
+        finally:
+            await conn.close()
+        for r in rows:
+            r["detail"] = json.loads(r["detail"]) if r.get("detail") else None
+        return rows
+
+    async def purge_research(self, now_epoch: float, tickers: Iterable[str] = ()) -> int:
+        """Drop expired briefs and briefs for markets that have rolled (settled)."""
+        conn = await self._db()
+        try:
+            cur = await conn.execute("DELETE FROM research_cache WHERE expires_at <= ?", (float(now_epoch),))
+            n = cur.rowcount or 0
+            tks = list(tickers)
+            for i in range(0, len(tks), 200):
+                chunk = tks[i : i + 200]
+                cur = await conn.execute(
+                    f"DELETE FROM research_cache WHERE ticker IN ({','.join('?' * len(chunk))})", chunk
+                )
+                n += cur.rowcount or 0
+            await conn.commit()
+            return int(n)
+        finally:
+            await conn.close()
+
     # ----- sync twins for the sync FastAPI handlers -----
+
+    def add_auto_order_sync(self, row):
+        return run_sync(self.add_auto_order(row))
+
+    def auto_orders_sync(self, since=None, limit=200):
+        return run_sync(self.auto_orders(since, limit))
+
+    def purge_research_sync(self, now_epoch, tickers=()):
+        return run_sync(self.purge_research(now_epoch, list(tickers)))
 
     def add_model_runs_sync(self, rows):
         return run_sync(self.add_model_runs(list(rows)))

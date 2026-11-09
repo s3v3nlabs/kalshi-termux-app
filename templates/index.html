@@ -19,6 +19,8 @@
     <span class="arm-mode" id="strip-mode">PAPER</span>
     <span class="arm-stat"><small>Bankroll</small><b id="strip-bankroll">—</b></span>
     <span class="arm-stat"><small>Today P&amp;L</small><b id="strip-pnl">$0.00</b></span>
+    <button class="auto-toggle off" id="strip-auto" type="button" role="switch" aria-checked="false" title="Auto-bet: places scanner picks on its own. Real money only when ARM LIVE is on.">AUTO <b id="strip-auto-state">OFF</b></button>
+    <span class="arm-stat auto-stat" id="strip-auto-box"><small>Auto-bet</small><b id="strip-auto-stat">off</b></span>
     <form class="arm-form" id="strip-arm-form" autocomplete="off">
       <input id="strip-arm-phrase" placeholder="type ARM LIVE" aria-label="Type ARM LIVE to arm real orders" autocomplete="off" />
       <input id="strip-arm-totp" class="hidden" inputmode="numeric" placeholder="code" aria-label="Extra lock code" autocomplete="one-time-code" />
@@ -126,6 +128,7 @@
         <div class="big-stat"><span class="big-number" id="calib-brier">—</span><span class="muted">Brier score (lower is better · 0.25 = coin flip)</span></div>
         <p class="muted" id="calib-meta">Loading…</p>
         <p class="muted mono" id="calib-train">—</p>
+        <p class="muted mono" id="calib-learn">Continuous learning: —</p>
         <svg id="calib-svg" class="calib-svg" viewBox="0 0 340 260" role="img" aria-label="Reliability curve"></svg>
         <div class="legend"><span class="lg pred">● predicted</span><span class="lg act">● actual</span><span class="lg diag">— perfect</span></div>
         <div id="calib-table" class="calib-table"></div>

@@ -15,13 +15,18 @@ Mobile-first **Kalshi prediction-market** web app for Termux → browser.
 
 PyPI `cryptography` crashes on Termux (`PyBaseObject_Type` / `_rust.abi3.so`). Install Termux `python-cryptography`, create the venv with `--system-site-packages`, then uninstall the pip overlay that `requirements.txt` installs. Full notes: [docs/TERMUX.md](docs/TERMUX.md).
 
+On Python 3.14 (current Termux) `pydantic-core` and the `uvicorn[standard]` extras have no prebuilt Android wheels, so pip compiles them with Rust. Install Termux's Rust toolchain and set the Android API level **before** `pip install`, or the build fails with `Target triple not supported by rustup: aarch64-unknown-linux-android`. The first build takes about 5–15 minutes; keep Termux open.
+
 ```bash
 pkg update -y
 pkg install -y python git python-cryptography
+pkg install -y rust maturin binutils
+export ANDROID_API_LEVEL=24
 git clone https://github.com/singular-ty/kalshi-termux-app.git
 cd kalshi-termux-app
 python -m venv --system-site-packages .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 pip uninstall -y cryptography
 python -c "from cryptography.hazmat.primitives import hashes; print('ok')"
@@ -102,6 +107,22 @@ Order limits this app enforces (Kalshi allows more on some markets):
 - **Whole contracts only, 1–10,000 per order.** Fractional counts are rejected.
 - Unknown order types and unknown V2 fields are rejected before anything is signed.
 - Kalshi errors are mapped to plain English (410 retired endpoint, 400 insufficient balance / bad price, 401 key, 403 permission, 409 duplicate, 429 slow down, 5xx "check Orders before retrying").
+
+## Auto-bet (opt-in)
+
+**AUTO** in the top strip turns the auto-bet loop on or off with one tap. It is **OFF** on a new install, and the choice is saved (`settings_kv.autobet_enabled`).
+
+- **Each cycle** (every `AUTOBET_INTERVAL_S`, default 30 s): size against the bankroll (Kalshi balance when live, `AUTOBET_PAPER_BANKROLL` in paper), run the normal scan (mispricing / Nash ranking, Brier-based Kelly halving), keep the markets where the model has a positive edge on a side and Kelly sizes at least one contract, drop anything the sports geo gate blocks and any market or event already held, resting or ordered this cycle, then send the top `AUTOBET_TOP_N` (default 5) through the same Create Order V2 path as a tapped order.
+- **Real money only when live trading is allowed AND ARM LIVE is set.** Otherwise the cycle runs the same picks as paper bets (nothing sent to Kalshi) so you can watch what it would do.
+- **OFF stops it at once:** the engine checks the switch before every order, so a tap mid-cycle stops the next order. Resting orders already at Kalshi stay there; cancel them under Account → Orders if you want.
+- Every auto order is logged (`auto_orders`) and every fill is a `bets` row with `source='auto'`, so it settles, feeds calibration and trains the model like any other bet. The strip shows mode, orders today, realized auto P&L, open stake and the last cycle.
+- API: `GET /api/autobet`, `POST /api/autobet {"enabled": true|false}`, `POST /api/autobet/run` (one cycle now).
+
+Model edges are estimates; auto-bet can lose money.
+
+## Continuous learning
+
+A background job (every `LEARN_INTERVAL_H`, default 6 h; `LEARN_ENABLED=0` stops it) ingests newly settled Kalshi markets, settles the app's own bets, refits the model on settled markets + settled bets, and promotes new weights **only** if holdout Brier improves (existing backtest gate). It also drops research briefs that expired or whose market settled, and rebuilds briefs for markets you still hold. **Calib** shows last run, last train time, holdout Brier, model version and next run. `POST /api/learn/run` runs one pass now.
 
 ## Trading mode
 

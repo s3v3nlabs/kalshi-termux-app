@@ -2,13 +2,18 @@
 
 PyPI `cryptography` crashes on Termux (`PyBaseObject_Type` / `_rust.abi3.so`). Install Termux `python-cryptography`, create the venv with `--system-site-packages` so that package is visible, then uninstall the pip overlay that `requirements.txt` installs.
 
+On Python 3.14 (current Termux) `pydantic-core` and the `uvicorn[standard]` extras have no prebuilt Android wheels, so pip compiles them with Rust. Install Termux's Rust toolchain and set the Android API level **before** `pip install`, or the build fails with `Target triple not supported by rustup: aarch64-unknown-linux-android`. The first build takes about 5–15 minutes; keep Termux open.
+
 ```bash
 pkg update -y
 pkg install -y python git python-cryptography
+pkg install -y rust maturin binutils
+export ANDROID_API_LEVEL=24
 git clone https://github.com/singular-ty/kalshi-termux-app.git
 cd kalshi-termux-app
 python -m venv --system-site-packages .venv
 source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 pip uninstall -y cryptography
 python -c "from cryptography.hazmat.primitives import hashes; print('ok')"
@@ -61,3 +66,24 @@ If startup or an ESPN scan fails with `ZoneInfoNotFoundError: 'No time zone foun
 ```bash
 pip install tzdata
 ```
+
+## pydantic-core / Rust build fails
+
+If `pip install -r requirements.txt` stops at `Failed to build 'pydantic-core'` (or uvicorn is missing afterwards), the Rust toolchain was not set up. Run, with the venv active:
+
+```bash
+pkg install -y rust maturin binutils
+export ANDROID_API_LEVEL=24
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+`export ANDROID_API_LEVEL=24` only lasts for the current Termux session; set it again in a new session before reinstalling. If the build still fails, this skips the Rust-built `uvicorn[standard]` extras (the app runs on plain uvicorn):
+
+```bash
+pip install fastapi uvicorn requests python-dotenv pyotp jinja2 pydantic tzdata aiosqlite
+```
+
+## Auto-bet and continuous learning on the phone
+
+Both run inside the server process, so they only work while Termux is running `./start.sh`. Run `termux-wake-lock` first so Android does not suspend Termux with the screen off. Auto-bet is OFF until you tap **AUTO** in the top strip; it places real orders only while live trading is allowed and ARM LIVE is set. Set `GEO_LOCAL_STATE` in `.env` or every sports market stays blocked (also for Auto-bet).

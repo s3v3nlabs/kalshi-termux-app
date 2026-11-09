@@ -1,7 +1,10 @@
 """FastAPI entry — Termux-friendly Kalshi betting portal."""
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -35,11 +38,33 @@ from app.ui_prefs import apply_saved_mode, save_dry_run_override
 
 ROOT = Path(__file__).resolve().parent.parent
 
+
+def _background_enabled() -> bool:
+    """Background loops (auto-bet, continuous learning) run in the server, not in tests."""
+    if os.getenv("BACKGROUND_TASKS", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    return "pytest" not in sys.modules
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    tasks = []
+    if _background_enabled():
+        tasks.append(asyncio.create_task(autobet.run_forever(), name="autobet"))
+        tasks.append(asyncio.create_task(learner.run_forever(), name="learner"))
+    try:
+        yield
+    finally:
+        for t in tasks:
+            t.cancel()
+
+
 app = FastAPI(
     title="Kalshi Termux Portal",
     version=__version__,
     docs_url="/api/docs",
     redoc_url=None,
+    lifespan=_lifespan,
 )
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
@@ -60,6 +85,31 @@ if os.getenv("VAULT_PASSPHRASE"):
 totp_mgr = TOTPManager(vault)
 client = KalshiClient()
 orders = OrderGate(store, client, ledger)
+
+
+def _auto_scan(bankroll: float) -> dict:
+    """Scan for the auto-bet loop: same ranking, calibration and Kelly halving as /scanner."""
+    from app.strategy.analogs import load_pool
+
+    try:
+        calib = ledger.calibration_sync()
+    except Exception:
+        calib = None
+    result = scan_opportunities(
+        client, limit=settings.scan_limit, bankroll=bankroll, sort="mispricing", calibration=calib, analog_pool=load_pool(ledger)
+    )
+    try:
+        ledger.add_model_snapshots_sync(model_run_rows(result.get("markets") or []))
+    except Exception:
+        pass
+    return result
+
+
+from app.strategy.learner import Learner  # noqa: E402
+from app.trading.autobet import AutoBetEngine  # noqa: E402
+
+autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto_scan, client_fn=lambda: client)
+learner = Learner(ledger=ledger, store=store, client_fn=lambda: client)
 
 # Session-ish flags (local process only)
 _app_unlocked = False
@@ -457,7 +507,44 @@ def api_training_status():
     """Settled sample size, last refit/gate result, and whether gems are verified."""
     from app.strategy.training import training_status
 
-    return training_status(ledger)
+    return {**training_status(ledger), "learner": learner.status()}
+
+
+# ---------- auto-bet + continuous learning ----------
+
+class AutoBetBody(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/autobet")
+def autobet_status():
+    return {"ok": True, **autobet.status(), "order_gate": orders.status()}
+
+
+@app.post("/api/autobet")
+def autobet_toggle(body: AutoBetBody):
+    """ON/OFF. OFF takes effect before the next order, even mid-cycle."""
+    autobet.set_enabled(body.enabled)
+    return {"ok": True, **autobet.status(), "order_gate": orders.status()}
+
+
+@app.post("/api/autobet/run")
+def autobet_run_now():
+    """Run one cycle now (only if Auto-bet is ON)."""
+    if not autobet.enabled:
+        raise HTTPException(409, "Auto-bet is OFF. Turn it on first.")
+    return {"ok": True, "cycle": autobet.run_cycle(), **autobet.status()}
+
+
+@app.get("/api/learn")
+def learn_status():
+    return {"ok": True, **learner.status()}
+
+
+@app.post("/api/learn/run")
+def learn_run_now():
+    """One continuous-learning pass now: ingest, settle, gated refit, research refresh."""
+    return {"ok": True, "record": learner.run_once(), **learner.status()}
 
 
 @app.post("/api/training/refit")
