@@ -109,3 +109,21 @@ def test_settle_open_bets_from_market_result(tmp_path):
     done = settle_open_bets(led, C())
     assert [d["bet"]["id"] for d in done] == [a]
     assert done[0]["bet"]["pnl"] == pytest.approx(0.8)
+
+
+def test_bets_alias_and_settle_route(tmp_path, monkeypatch):
+    """UI screen 3: GET /bets lists bets; POST /api/bets/{id}/settle writes outcome + pnl."""
+    from fastapi.testclient import TestClient
+
+    import app.main as main
+
+    led = Ledger(tmp_path / "ui.db")
+    monkeypatch.setattr(main, "ledger", led)
+    monkeypatch.setattr(main, "maybe_refit", lambda *a, **k: None)
+    bid = led.add_bet_sync(ticker="KX-UI", side="yes", price=0.4, stake=4.0, model_prob=0.55, market_prob=0.4)
+    http = TestClient(main.app)
+    rows = http.get("/bets").json()["bets"]
+    assert [b["id"] for b in rows] == [bid] and rows[0]["model_prob"] == 0.55
+    res = http.post(f"/api/bets/{bid}/settle", json={"result": "yes"}).json()
+    assert res["bet"]["outcome"] == 1 and abs(res["bet"]["pnl"] - 6.0) < 1e-6
+    assert http.get("/bets").json()["bets"][0]["outcome"] == 1

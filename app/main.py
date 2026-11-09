@@ -418,6 +418,7 @@ class SettleBody(BaseModel):
     result: str  # winning side: "yes" or "no"
 
 
+@app.get("/bets")
 @app.get("/api/bets")
 def api_bets(settled: Optional[bool] = None):
     return {"ok": True, "bets": ledger.bets_sync(settled)}

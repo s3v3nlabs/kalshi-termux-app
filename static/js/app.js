@@ -632,6 +632,114 @@ async function refreshCalibration() {
 setInterval(() => panelVisible("calibration") && refreshCalibration(), 30000);
 $$('#nav button[data-panel="calibration"]').forEach((b) => b.addEventListener("click", refreshCalibration));
 
+/* ---------- Bet log (operator console, screen 3) ---------- */
+let allBets = [];
+
+function sparkSvg(values) {
+  if (!values.length) return `<text x="150" y="34" text-anchor="middle" class="ax">no settled bets yet</text>`;
+  const W = 300, H = 60, P = 4;
+  const series = [0, ...values];
+  const lo = Math.min(0, ...series), hi = Math.max(0, ...series);
+  const span = hi - lo || 1;
+  const x = (i) => P + (i / (series.length - 1)) * (W - 2 * P);
+  const y = (v) => H - P - ((v - lo) / span) * (H - 2 * P);
+  const last = series[series.length - 1];
+  return `<line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" class="zero"/>
+    <polyline class="${last >= 0 ? "up" : "down"}" points="${series.map((v, i) => x(i) + "," + y(v)).join(" ")}"/>`;
+}
+
+function betMatches(b) {
+  const o = $("#bets-outcome").value;
+  const t = $("#bets-ticker").value.trim().toUpperCase();
+  if (o === "open" && b.outcome != null) return false;
+  if (o === "won" && b.outcome !== 1) return false;
+  if (o === "lost" && b.outcome !== 0) return false;
+  if (t && !String(b.ticker || "").toUpperCase().includes(t)) return false;
+  return true;
+}
+
+function renderBets() {
+  const rows = allBets.filter(betMatches);
+  const settled = rows.filter((b) => b.outcome != null).sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  let run = 0;
+  const curve = settled.map((b) => (run += Number(b.pnl || 0)));
+  $("#bets-pnl").textContent = (run < 0 ? "−$" : "$") + Math.abs(run).toFixed(2);
+  $("#bets-pnl").className = "big-number " + (run < 0 ? "neg" : "pos");
+  $("#bets-spark").innerHTML = sparkSvg(curve);
+  $("#bets-meta").textContent = `${rows.length} bet(s) shown · ${rows.length - settled.length} open · ${settled.length} settled`;
+  const list = $("#bets-list");
+  if (!rows.length) {
+    list.innerHTML = `<div class="card muted">No bets yet. Paper bets you place from the Bet screen show up here.</div>`;
+    return;
+  }
+  list.innerHTML = rows
+    .slice()
+    .sort((a, b) => String(b.ts).localeCompare(String(a.ts)))
+    .map((b) => {
+      const status =
+        b.outcome == null ? `<span class="chip">OPEN</span>` : b.outcome ? `<span class="chip go">WON</span>` : `<span class="chip nogo">LOST</span>`;
+      const pnl = b.pnl == null ? "" : `<span class="mono ${b.pnl < 0 ? "neg" : "pos"}">${b.pnl < 0 ? "−" : "+"}$${Math.abs(b.pnl).toFixed(2)}</span>`;
+      const mp = b.model_prob == null ? "—" : (b.model_prob * 100).toFixed(1) + "%";
+      const settle =
+        b.outcome == null
+          ? `<div class="row settle-row"><button class="btn small" type="button" data-settle="${b.id}" data-result="yes">Settle: YES won</button>
+             <button class="btn small ghost" type="button" data-settle="${b.id}" data-result="no">Settle: NO won</button></div>`
+          : "";
+      return `<div class="bet-item">
+        <div class="bet-top">${status}<span class="mono ticker">${escapeHtml(b.ticker)}</span>${pnl}</div>
+        <div class="bet-stats mono">
+          <span>${String(b.side).toUpperCase()} @ ${Math.round(b.price * 100)}¢</span>
+          <span>stake $${Number(b.stake).toFixed(2)}</span>
+          <span title="Model probability this side wins, recorded at fill">model ${mp}</span>
+          <span title="Market price implied probability">mkt ${b.market_prob == null ? "—" : (b.market_prob * 100).toFixed(1) + "%"}</span>
+        </div>
+        <div class="muted small-ts">#${b.id} · ${fmtTs(b.ts)}</div>
+        ${settle}
+      </div>`;
+    })
+    .join("");
+}
+
+async function refreshBets() {
+  try {
+    const r = await api("/bets");
+    allBets = r.bets || [];
+    renderBets();
+    if (typeof paintArmStrip === "function") paintArmStrip();
+  } catch (e) {
+    $("#bets-meta").textContent = "Error: " + e.message;
+  }
+}
+
+$("#bets-list").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-settle]");
+  if (!btn) return;
+  const id = btn.dataset.settle;
+  const result = btn.dataset.result;
+  if (!confirm(`Settle bet #${id} as ${result.toUpperCase()} won?`)) return;
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/bets/${id}/settle`, { method: "POST", body: JSON.stringify({ result }) });
+    toast(`Bet #${id} settled · P&L ${r.bet && r.bet.pnl != null ? r.bet.pnl.toFixed(2) : "—"}`);
+    await refreshBets();
+  } catch (e) {
+    toast("Settle failed: " + e.message);
+    btn.disabled = false;
+  }
+});
+$("#btn-bets-auto").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/bets/settle", { method: "POST" });
+    toast(`Kalshi results: ${(r.settled || []).length} bet(s) settled`);
+    await refreshBets();
+  } catch (e) {
+    toast("Check failed: " + e.message);
+  }
+});
+$("#bets-outcome").addEventListener("change", renderBets);
+$("#bets-ticker").addEventListener("input", renderBets);
+$$('#nav button[data-panel="bets"]').forEach((b) => b.addEventListener("click", refreshBets));
+
 /* ---------- bet form ---------- */
 
 function setSide(side) {

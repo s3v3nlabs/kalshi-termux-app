@@ -377,3 +377,22 @@ details > summary { cursor: pointer; min-height: 32px; }
 .cb { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; font-family: var(--mono); font-size: 0.72rem;
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: rgba(0,0,0,0.2); }
 .cb span:first-child { color: var(--cyan); }
+
+/* ---------- Operator console: bet log ---------- */
+.big-number.neg, .mono.neg { color: var(--red); }
+.big-number.pos, .mono.pos { color: var(--green); }
+.spark { width: 100%; height: 60px; display: block; margin: 4px 0 8px; }
+.spark .zero { stroke: rgba(255,255,255,0.15); stroke-dasharray: 3 3; }
+.spark .up { fill: none; stroke: var(--green); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark .down { fill: none; stroke: var(--red); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark .ax { fill: var(--muted); font-size: 10px; }
+.filters-row { align-items: flex-end; }
+.inline-label.grow { flex: 1 1 160px; }
+.bets-list { display: flex; flex-direction: column; gap: 8px; }
+.bet-item { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 10px 12px; }
+.bet-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bet-top .ticker { color: var(--cyan); font-size: 0.78rem; overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
+.bet-stats { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.76rem; margin-top: 6px; }
+.small-ts { font-size: 0.7rem; margin-top: 4px; }
+.settle-row { margin-top: 8px; gap: 8px; }
+.settle-row .btn { min-height: 44px; }

@@ -47,6 +47,7 @@
     <nav class="nav" id="nav" aria-label="Sections">
       <button data-panel="scanner" class="active" type="button"><span class="nav-ico" aria-hidden="true">📈</span><span>Markets</span></button>
       <button data-panel="calibration" type="button"><span class="nav-ico" aria-hidden="true">🎚️</span><span>Calib</span></button>
+      <button data-panel="bets" type="button"><span class="nav-ico" aria-hidden="true">📒</span><span>Bets</span></button>
       <button data-panel="contract" type="button"><span class="nav-ico" aria-hidden="true">🎯</span><span>Bet</span></button>
       <button data-panel="nash" type="button"><span class="nav-ico" aria-hidden="true">🧮</span><span>Kelly</span></button>
       <button data-panel="account" type="button"><span class="nav-ico" aria-hidden="true">💼</span><span>Account</span></button>
@@ -114,6 +115,31 @@
         <div class="legend"><span class="lg pred">● predicted</span><span class="lg act">● actual</span><span class="lg diag">— perfect</span></div>
         <div id="calib-table" class="calib-table"></div>
       </div>
+    </section>
+
+    <!-- BET LOG -->
+    <section class="panel" id="panel-bets">
+      <div class="card">
+        <h2>Bet log</h2>
+        <div class="big-stat"><span class="big-number" id="bets-pnl">$0.00</span><span class="muted">settled P&amp;L</span></div>
+        <svg id="bets-spark" class="spark" viewBox="0 0 300 60" preserveAspectRatio="none" role="img" aria-label="Running P&amp;L"></svg>
+        <div class="row filters-row">
+          <label class="inline-label">Outcome
+            <select id="bets-outcome">
+              <option value="all">All</option>
+              <option value="open">Open</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+            </select>
+          </label>
+          <label class="inline-label grow">Ticker
+            <input id="bets-ticker" type="search" placeholder="filter ticker" autocomplete="off" />
+          </label>
+          <button class="btn ghost" id="btn-bets-auto" type="button">Check Kalshi results</button>
+        </div>
+        <p class="muted" id="bets-meta"></p>
+      </div>
+      <div id="bets-list" class="bets-list"></div>
     </section>
 
     <!-- CONTRACT -->
