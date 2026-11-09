@@ -3,8 +3,8 @@
 OFF by default. The on/off choice is saved in the Store (``autobet_enabled``).
 Each cycle (when ON):
 
-1. size against the bankroll (live Kalshi balance when ARM LIVE is set and
-   paper trading is off; otherwise ``AUTOBET_PAPER_BANKROLL``),
+1. size against the bankroll (live Kalshi balance when mode is LIVE and
+   keys exist; otherwise ``AUTOBET_PAPER_BANKROLL``),
 2. run the normal scan (mispricing / Nash ranking, Brier-based Kelly halving),
 3. keep rows where the model has a positive edge on a side and Kelly sizes at
    least one contract,
@@ -13,7 +13,7 @@ Each cycle (when ON):
    ordered this cycle,
 5. send the top ``AUTOBET_TOP_N`` through the existing ``OrderGate.place``
    (Create Order V2). The gate decides paper vs live exactly as for a tapped
-   order: real money only when live trading is allowed AND ARM LIVE is set.
+   order: real money only when mode is LIVE and Kalshi keys exist.
 
 Every auto order is written to ``auto_orders`` and its fill to ``bets`` with
 ``source='auto'`` so it feeds calibration and training like any other bet.
@@ -285,6 +285,9 @@ class AutoBetEngine:
         try:
             live = bool(self.orders.live_armed)
             summary["mode"] = "live" if live else "paper"
+            if live and not settings.has_keys:
+                summary["error"] = "Live — add Kalshi keys in Settings"
+                return summary
             bankroll = self._bankroll(live)
             if not bankroll or bankroll <= 0:
                 summary["error"] = "No bankroll to size against (balance 0 or unreadable)."

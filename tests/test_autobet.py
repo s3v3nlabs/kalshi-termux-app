@@ -188,13 +188,24 @@ def test_pnl_from_settled_auto_bets(env):
     assert env["ledger"].bets_sync()[-1]["source"] == "manual" and manual["ok"]
 
 
-def test_live_only_when_armed_and_allowed(env, monkeypatch):
+def test_live_when_mode_live(env, monkeypatch):
     eng = env["make"](top_n=1)
     eng.set_enabled(True)
-    monkeypatch.setattr(settings, "dry_run", False)
-    out = eng.run_cycle()  # allowed but not armed -> still paper
+    # PAPER mode first
+    monkeypatch.setattr(settings, "dry_run", True)
+    out = eng.run_cycle()
     assert out["mode"] == "paper" and env["client"].sent == []
-    env["gate"]._live_armed = True
+    # LIVE mode + keys (fixture sets key_id/path via monkeypatch below if needed)
+    monkeypatch.setattr(settings, "dry_run", False)
+    monkeypatch.setattr(settings, "key_id", "unit-test")
+    # has_keys needs key_path file — env gate already used with dry_run True; ensure path exists
+    key = env.get("key_path")
+    if key is None:
+        from pathlib import Path
+        key = Path(env["store"].path).parent / "unit.key"
+        key.write_text("x\n", encoding="utf-8")
+        env["key_path"] = key
+    monkeypatch.setattr(settings, "key_path", env["key_path"])
     out = eng.run_cycle()
     assert out["mode"] == "live" and out["bankroll"] == 500.0 and out["placed"] == 1
     sent = env["client"].sent[0]
@@ -206,7 +217,11 @@ def test_live_only_when_armed_and_allowed(env, monkeypatch):
 
 def test_live_dedupes_against_kalshi_positions_and_resting(env, monkeypatch):
     monkeypatch.setattr(settings, "dry_run", False)
-    env["gate"]._live_armed = True
+    monkeypatch.setattr(settings, "key_id", "unit-test")
+    from pathlib import Path
+    key = Path(env["store"].path).parent / "unit2.key"
+    key.write_text("x\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "key_path", key)
     env["client"].get_positions = lambda limit=100: {"market_positions": [{"ticker": "KXCPI-26NOV-T3.0", "position": 5}]}
     env["client"].get_orders = lambda status=None, limit=20: {"orders": [{"ticker": "KXRAIN-26NOV10-B1"}]}
     eng = env["make"]()

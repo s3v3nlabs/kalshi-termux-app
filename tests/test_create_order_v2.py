@@ -172,11 +172,6 @@ def test_dry_run_does_not_call_create_order_and_live_does(tmp_path):
         assert calls == []
 
         settings.dry_run = False
-        assert gate.place("KXNHLGAME-TEST", "yes", 1, price_cents=22)["dry_run"] is True
-        assert calls == []
-
-        armed = gate.arm_live("ARM LIVE")
-        assert armed["ok"] is True
         live = gate.place("KXNHLGAME-TEST", "no", 1, price_cents=40)
         assert live["ok"] is True
         assert live["dry_run"] is False

@@ -189,6 +189,7 @@ def test_scan_endpoint_does_not_write_per_poll(tmp_path, monkeypatch):
     assert led.count_model_runs_sync() == 150  # not 750
 
     # A bet forces a fresh snapshot for its ticker even inside the hour.
+    assert http.post("/api/settings/mode", json={"mode": "paper"}).status_code == 200
     res = http.post("/api/trading/order", json={"ticker": "KXTEST-7", "side": "yes", "count": 1, "price_cents": 30})
     assert res.status_code == 200, res.text
     runs = [r for r in led.model_runs_sync() if r["ticker"] == "KXTEST-7"]

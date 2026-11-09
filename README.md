@@ -6,7 +6,7 @@ Mobile-first **Kalshi prediction-market** web app for Termux → browser.
 - **Authenticated** balance / positions / orders via signed requests — Ed25519 (Kalshi default) or RSA-PSS (`KALSHI_KEY_ID` + PEM)
 - **Installable phone app** (PWA): open `http://127.0.0.1:8787` in Chrome → ⋮ → **Add to Home screen**
 - **Strategy**: high-payout scanner, fractional **Kelly**, **Nash** payoff matrix, optional Monte Carlo sim
-- **Safety**: fresh install uses **paper bets** until you tap **Allow live trading**. Real orders still need typed **ARM LIVE** (+ optional extra lock code). No `.env` edit required.
+- **Mode**: fresh install starts on **LIVE**. Top strip **PAPER | LIVE** switch is one tap (LIVE confirm optional / skippable). Auto-bet stays OFF until you tap AUTO. Sports geo-gate stays fail-closed.
 - **Local security**: Fernet vault, `chmod 600` key file, Aegis-style TOTP — no phone-home
 
 > Not financial advice. Prediction markets involve risk of loss. **No 100% win-rate claims.**
@@ -69,7 +69,7 @@ pip install -r requirements.txt
 
 If port `8787` is busy: `PORT=8788 ./start.sh`.
 
-The server listens on `127.0.0.1` (this phone only) by default. `HOST=0.0.0.0 ./start.sh` lets other devices on your Wi-Fi reach it — including ARM LIVE — so only do that on a network you trust.
+The server listens on `127.0.0.1` (this phone only) by default. `HOST=0.0.0.0 ./start.sh` lets other devices on your Wi-Fi reach it — including LIVE mode — so only do that on a network you trust.
 
 ## Config
 
@@ -78,7 +78,7 @@ The server listens on `127.0.0.1` (this phone only) by default. `HOST=0.0.0.0 ./
 | `KALSHI_HOST` | `external` (default) · `elections` · `demo` · `trading` |
 | `KALSHI_KEY_ID` | API key id |
 | `KALSHI_KEY_PATH` | PEM path (default `secrets/kalshi.key`) |
-| `DRY_RUN` | Boot default only. `1` means paper bets until Settings → **Allow live trading** saves a local override |
+| `DRY_RUN` | Boot default only when nothing is saved. `0` = LIVE (default). `1` = PAPER. Top strip switch saves the choice |
 | `KELLY_FRACTION` | fraction of full Kelly (default `0.5`) |
 | `KELLY_MAX_FRACTION` | hard cap of bankroll per trade (default `0.05`) |
 | `CACHE_TTL_SECONDS` | scanner cache (default `10`) |
@@ -113,7 +113,7 @@ Order limits this app enforces (Kalshi allows more on some markets):
 **AUTO** in the top strip turns the auto-bet loop on or off with one tap. It is **OFF** on a new install, and the choice is saved (`settings_kv.autobet_enabled`).
 
 - **Each cycle** (every `AUTOBET_INTERVAL_S`, default 30 s): size against the bankroll (Kalshi balance when live, `AUTOBET_PAPER_BANKROLL` in paper), run the normal scan (mispricing / Nash ranking, Brier-based Kelly halving), keep the markets where the model has a positive edge on a side and Kelly sizes at least one contract, drop anything the sports geo gate blocks and any market or event already held, resting or ordered this cycle, then send the top `AUTOBET_TOP_N` (default 5) through the same Create Order V2 path as a tapped order.
-- **Real money only when live trading is allowed AND ARM LIVE is set.** Otherwise the cycle runs the same picks as paper bets (nothing sent to Kalshi) so you can watch what it would do.
+- **Real money only when mode is LIVE and Kalshi keys exist.** In PAPER mode the cycle runs the same picks as paper bets (nothing sent to Kalshi).
 - **OFF stops it at once:** the engine checks the switch before every order, so a tap mid-cycle stops the next order. Resting orders already at Kalshi stay there; cancel them under Account → Orders if you want.
 - Every auto order is logged (`auto_orders`) and every fill is a `bets` row with `source='auto'`, so it settles, feeds calibration and trains the model like any other bet. The strip shows mode, orders today, realized auto P&L, open stake and the last cycle.
 - API: `GET /api/autobet`, `POST /api/autobet {"enabled": true|false}`, `POST /api/autobet/run` (one cycle now).
@@ -126,7 +126,7 @@ A background job (every `LEARN_INTERVAL_H`, default 6 h; `LEARN_ENABLED=0` stops
 
 ## Trading mode
 
-A new install uses **paper bets (no money)** until you tap **Allow live trading** in Settings and confirm. That choice is saved on the phone (`data/ui_prefs.json`, gitignored). Real orders still require typing **ARM LIVE** once per session. **Disarm** pauses real orders. **Paper bets only** turns live trading back off.
+A new install starts on **LIVE**. The top sticky strip has a **PAPER | LIVE** switch (44px taps). PAPER is instant. LIVE is one tap plus an optional confirm sheet (or instant if **Skip LIVE confirm** is on in Settings). The choice is saved on the phone (`data/ui_prefs.json`, gitignored). Without Kalshi keys, LIVE shows **Live — add Kalshi keys in Settings** and refuses orders instead of silently paper-trading. Optional extra lock code (TOTP) still applies when switching to LIVE if you enabled it.
 
 ## API keys (required for Account / live)
 
@@ -146,7 +146,7 @@ The **Clear local keys** button only removes the local PEM and runtime/vault Key
 2. **Bet** — contract detail, big YES/NO buttons, required max price, cost preview, half-Kelly size button, paper/live order gate  
 3. **Nash / Kelly** — payoff matrix + Monte Carlo simulation  
 4. **Account** — balance / positions / orders (keys required)  
-5. **Settings** — Allow live trading, app lock password, key on this phone, then **ARM LIVE**  
+5. **Settings** — app lock password, Kalshi key on this phone, Skip LIVE confirm, optional extra lock code  
 6. **Activity** — SQLite activity + order log  
 
 ## Auth signing (Kalshi v2)

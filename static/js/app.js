@@ -55,12 +55,13 @@ $$("#nav button[data-panel]").forEach((btn) => {
 /* state shared by the bet form */
 let lastScan = null;
 let currentContract = null;
-let currentMode = { paper: true, armed: false };
+let currentMode = { paper: false, armed: true, needsKeys: false };
 let scanFilter = "all";
 
-/* ---------- ARM LIVE strip (operator console, screen 4) ---------- */
+/* ---------- PAPER | LIVE strip (fast mode switch) ---------- */
 let lastStatus = null;
 let stripBankroll = null;
+let skipLiveConfirm = false;
 
 function todayPnl() {
   const today = new Date().toDateString();
@@ -69,26 +70,103 @@ function todayPnl() {
     .reduce((t, b) => t + Number(b.pnl || 0), 0);
 }
 
+function hideLiveConfirm() {
+  $("#live-confirm-sheet")?.classList.add("hidden");
+  const totp = $("#strip-arm-totp");
+  if (totp) totp.value = "";
+}
+
+function showLiveConfirm() {
+  const sheet = $("#live-confirm-sheet");
+  if (!sheet) return;
+  sheet.classList.remove("hidden");
+  const totp = $("#strip-arm-totp");
+  const needTotp = Boolean(lastStatus && lastStatus.totp_configured);
+  totp?.classList.toggle("hidden", !needTotp);
+  syncStripHeight();
+}
+
 function paintArmStrip() {
   const s = lastStatus;
   if (!s) return;
   const gate = s.order_gate || {};
-  const armed = Boolean(gate.live_armed) && !s.dry_run;
+  const paper = Boolean(s.dry_run);
+  const live = !paper;
+  const hasKeys = Boolean(s.has_keys);
+  const needsKeys = live && !hasKeys;
   const mode = $("#strip-mode");
-  mode.textContent = armed ? "LIVE · REAL MONEY" : s.dry_run ? "DRY RUN · paper" : "LIVE READY · not armed";
-  mode.className = "arm-mode " + (armed ? "live" : s.dry_run ? "paper" : "ready");
-  document.body.classList.toggle("live-armed", armed);
-  $("#strip-bankroll").textContent = stripBankroll == null ? (s.has_keys ? "locked" : "no key") : "$" + Number(stripBankroll).toFixed(2);
+  if (needsKeys) {
+    mode.textContent = "Live — add Kalshi keys in Settings";
+    mode.className = "arm-mode needs-keys";
+  } else if (live) {
+    mode.textContent = "LIVE";
+    mode.className = "arm-mode live";
+  } else {
+    mode.textContent = "PAPER";
+    mode.className = "arm-mode paper";
+  }
+  $("#strip-paper")?.setAttribute("aria-pressed", String(paper));
+  $("#strip-live")?.setAttribute("aria-pressed", String(live));
+  document.body.classList.toggle("live-armed", live && hasKeys);
+  document.body.classList.toggle("mode-paper", paper);
+  $("#strip-bankroll").textContent =
+    stripBankroll == null ? (hasKeys ? "…" : "no key") : "$" + Number(stripBankroll).toFixed(2);
   const p = todayPnl();
   $("#strip-pnl").textContent = (p < 0 ? "−$" : "$") + Math.abs(p).toFixed(2);
   $("#strip-pnl").className = p < 0 ? "neg" : p > 0 ? "pos" : "";
-  $("#strip-arm-phrase").classList.toggle("hidden", armed);
-  $("#strip-arm").classList.toggle("hidden", armed);
-  $("#strip-arm-totp").classList.toggle("hidden", armed || !s.totp_configured);
-  $("#strip-disarm").classList.toggle("hidden", !armed);
-  $("#strip-arm").title = s.dry_run ? "Allow live trading in Settings first" : "Arms real orders for this session";
+  skipLiveConfirm = Boolean(s.skip_live_confirm);
+  const skipEl = $("#skip-live-confirm");
+  if (skipEl) skipEl.checked = skipLiveConfirm;
   if (typeof refreshAuto === "function") refreshAuto();
+  syncStripHeight();
 }
+
+async function setTradingMode(mode, { totpCode = null, fromConfirm = false } = {}) {
+  const body = { mode };
+  if (totpCode) body.totp_code = totpCode;
+  const r = await api("/api/settings/mode", { method: "POST", body: JSON.stringify(body) });
+  hideLiveConfirm();
+  await refreshStatus();
+  if (mode === "live") {
+    toast(r.has_keys ? "LIVE — real orders on" : "Live — add Kalshi keys in Settings");
+  } else {
+    toast("PAPER — no money is sent");
+  }
+  return r;
+}
+
+async function requestLiveMode() {
+  if (skipLiveConfirm || (lastStatus && lastStatus.skip_live_confirm)) {
+    try {
+      await setTradingMode("live");
+    } catch (e) {
+      toast(e.message);
+    }
+    return;
+  }
+  showLiveConfirm();
+}
+
+$("#strip-paper")?.addEventListener("click", async () => {
+  hideLiveConfirm();
+  try {
+    await setTradingMode("paper");
+  } catch (e) {
+    toast(e.message);
+  }
+});
+$("#strip-live")?.addEventListener("click", () => {
+  if (lastStatus && !lastStatus.dry_run) return; // already LIVE
+  requestLiveMode();
+});
+$("#confirm-live")?.addEventListener("click", async () => {
+  try {
+    await setTradingMode("live", { totpCode: $("#strip-arm-totp")?.value || null, fromConfirm: true });
+  } catch (e) {
+    toast(e.message);
+  }
+});
+$("#cancel-live")?.addEventListener("click", hideLiveConfirm);
 
 async function refreshStripMoney() {
   if (lastStatus && lastStatus.has_keys) {
@@ -98,41 +176,14 @@ async function refreshStripMoney() {
     } catch {
       stripBankroll = null;
     }
+  } else {
+    stripBankroll = null;
   }
   try {
     allBets = (await api("/bets")).bets || allBets;
   } catch {}
   paintArmStrip();
 }
-
-$("#strip-arm-form").addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  if (lastStatus && lastStatus.dry_run) {
-    toast("Allow live trading in Settings first");
-    openSettings("#arm-card");
-    return;
-  }
-  try {
-    const r = await api("/api/trading/arm", {
-      method: "POST",
-      body: JSON.stringify({
-        confirm_phrase: $("#strip-arm-phrase").value,
-        totp_code: $("#strip-arm-totp").value || null,
-      }),
-    });
-    toast(r.ok ? "Real orders are on" : r.error || "Could not arm");
-    $("#strip-arm-phrase").value = "";
-    $("#strip-arm-totp").value = "";
-    refreshStatus();
-  } catch (e) {
-    toast(e.message);
-  }
-});
-$("#strip-disarm").addEventListener("click", async () => {
-  await api("/api/trading/disarm", { method: "POST", body: "{}" });
-  toast("Real orders paused");
-  refreshStatus();
-});
 setInterval(() => document.visibilityState === "visible" && refreshStripMoney(), 30000);
 
 /* ---------- Auto-bet switch (strip) ---------- */
@@ -186,8 +237,8 @@ $("#strip-auto").addEventListener("click", async () => {
     toast(
       turnOn
         ? autoStatus.mode === "live"
-          ? "Auto-bet ON — placing real orders"
-          : "Auto-bet ON — paper simulation (ARM LIVE for real orders)"
+          ? "Auto-bet ON · LIVE"
+          : "Auto-bet ON · PAPER"
         : "Auto-bet OFF"
     );
   } catch (e) {
@@ -200,7 +251,8 @@ setInterval(() => document.visibilityState === "visible" && refreshAuto(), 5000)
 function paintMode(s) {
   const gate = s.order_gate || {};
   const paper = Boolean(s.dry_run);
-  const armed = Boolean(gate.live_armed);
+  const armed = !paper; // LIVE mode is armed by definition
+  const needsKeys = armed && !Boolean(s.has_keys);
   const mb = $("#badge-mode");
   const pill = $("#mode-pill");
   const detail = $("#mode-detail");
@@ -208,54 +260,44 @@ function paintMode(s) {
   const ctaTitle = $("#live-cta-title");
   const ctaText = $("#live-cta-text");
   const ctaBtn = $("#btn-allow-live-top");
-  if (!paper && armed) {
-    mb.textContent = "Live armed";
+  if (needsKeys) {
+    mb.textContent = "LIVE · no keys";
     mb.className = "badge danger";
     if (pill) {
-      pill.textContent = "Real bets (uses Kalshi balance)";
+      pill.textContent = "Live — add Kalshi keys in Settings";
       pill.className = "mode-pill danger";
     }
-    if (detail) detail.textContent = "This session can place real orders. Disarm to stop.";
+    if (detail) detail.textContent = gate.mode_detail || "Live mode on. Add Kalshi keys before orders spend money.";
+    cta?.classList.remove("hidden");
+    if (ctaTitle) ctaTitle.textContent = "Live — add Kalshi keys";
+    if (ctaText) ctaText.textContent = "Mode is LIVE. Save your Kalshi key so orders can use your balance.";
+    if (ctaBtn) ctaBtn.textContent = "Open Settings";
+  } else if (armed) {
+    mb.textContent = "LIVE";
+    mb.className = "badge danger";
+    if (pill) {
+      pill.textContent = "LIVE — uses Kalshi balance";
+      pill.className = "mode-pill danger";
+    }
+    if (detail) detail.textContent = "Top strip PAPER | LIVE. Tap PAPER anytime to stop real orders.";
     cta?.classList.add("hidden");
-  } else if (!paper) {
-    mb.textContent = "Live ready";
+  } else {
+    mb.textContent = "PAPER";
     mb.className = "badge warn";
     if (pill) {
-      pill.textContent = "Live trading allowed";
+      pill.textContent = "PAPER — no money";
       pill.className = "mode-pill warn";
     }
-    if (detail) detail.textContent = "Real bets are allowed. Type ARM LIVE below before any order spends money.";
-    cta?.classList.remove("hidden");
-    if (ctaTitle) ctaTitle.textContent = "Live trading is allowed";
-    if (ctaText) ctaText.textContent = "Type ARM LIVE to turn on real orders for this session.";
-    if (ctaBtn) ctaBtn.textContent = "Turn on real orders";
-  } else {
-    mb.textContent = "Paper bets";
-    mb.className = "badge ok";
-    if (pill) {
-      pill.textContent = "Paper bets (no money)";
-      pill.className = "mode-pill ok";
-    }
-    if (detail) detail.textContent = "Orders stay on this phone. Tap Allow live trading when you want real bets.";
-    cta?.classList.remove("hidden");
-    if (ctaTitle) ctaTitle.textContent = "Want real bets?";
-    if (ctaText) ctaText.textContent = "Allow live trading here. You still type ARM LIVE before any order spends money.";
-    if (ctaBtn) ctaBtn.textContent = "Allow live trading";
+    if (detail) detail.textContent = "Paper bets stay on this phone. Tap LIVE in the top strip for real orders.";
+    cta?.classList.add("hidden");
   }
-  currentMode = { paper, armed };
+  currentMode = { paper, armed, needsKeys };
   paintOrderMode();
-  $("#btn-allow-live")?.classList.toggle("is-current", !paper);
-  $("#btn-paper-only")?.classList.toggle("is-current", paper);
-  const arm = $("#arm-card");
-  if (arm) {
-    arm.classList.toggle("arm-ready", !paper && !armed);
-    arm.classList.toggle("arm-on", !paper && armed);
-  }
   const safety = $("#safety-out");
   if (safety) {
-    if (!paper && armed) safety.textContent = "Real bets are on for this session. They use your Kalshi balance.";
-    else if (!paper) safety.textContent = "Live trading is allowed. Type ARM LIVE before a real bet is sent.";
-    else safety.textContent = "Paper bets only. Allow live trading before ARM LIVE will work.";
+    if (needsKeys) safety.textContent = "Live — add Kalshi keys in Settings.";
+    else if (armed) safety.textContent = "LIVE mode. Real bets use your Kalshi balance.";
+    else safety.textContent = "PAPER mode. No money is sent.";
   }
 }
 
@@ -310,23 +352,11 @@ function openSettings(anchor) {
 }
 
 async function allowLiveTrading() {
-  if (!confirm("This can spend real money. You must still type ARM LIVE before any real order.")) return;
-  await api("/api/settings/mode", {
-    method: "POST",
-    body: JSON.stringify({ allow_live: true }),
-  });
-  toast("Live trading allowed — type ARM LIVE before a real bet");
-  openSettings("#arm-card");
-  refreshStatus();
+  await requestLiveMode();
 }
 
 async function paperBetsOnly() {
-  await api("/api/settings/mode", {
-    method: "POST",
-    body: JSON.stringify({ dry_run: true }),
-  });
-  toast("Paper bets only — no money is sent");
-  refreshStatus();
+  await setTradingMode("paper");
 }
 
 function payoutSort(markets) {
@@ -1300,15 +1330,18 @@ function paintOrderMode() {
   const strip = $("#order-mode-strip");
   const btn = $("#btn-paper");
   if (!strip || !btn) return;
-  if (!currentMode.paper && currentMode.armed) {
+  if (currentMode.needsKeys) {
+    strip.textContent = "Live — add Kalshi keys in Settings";
+    strip.className = "mode-strip danger";
+    btn.textContent = "Add keys to place LIVE bet";
+    btn.classList.add("danger");
+  } else if (!currentMode.paper && currentMode.armed) {
     strip.textContent = "REAL BET — uses your Kalshi balance";
     strip.className = "mode-strip danger";
     btn.textContent = "Place REAL bet";
     btn.classList.add("danger");
   } else {
-    strip.textContent = currentMode.paper
-      ? "Paper bet — no money is sent"
-      : "Paper bet — live is allowed but not armed (type ARM LIVE in Settings)";
+    strip.textContent = "Paper bet — no money is sent";
     strip.className = "mode-strip ok";
     btn.textContent = "Place paper bet";
     btn.classList.remove("danger");
@@ -1347,6 +1380,11 @@ async function submitOrder() {
   }
   const status = await api("/api/trading/status");
   const body = { ticker, side: f.side, count: f.count, price_cents: f.price, order_type: f.type };
+  if ((status.effective_mode === "LIVE" || status.live_armed) && !status.has_keys) {
+    toast("Live — add Kalshi keys in Settings");
+    openSettings("#api-credentials-card");
+    return;
+  }
   if (status.effective_mode === "LIVE" || status.live_armed) {
     const cost = ((f.count * f.price) / 100).toFixed(2);
     if (
@@ -1418,20 +1456,23 @@ $("#btn-analyze").onclick = analyze;
 $("#btn-paper").onclick = submitOrder;
 $("#btn-refresh-log").onclick = refreshActivity;
 $("#btn-open-settings").onclick = () => openSettings("#api-credentials-card");
-$("#btn-allow-live").onclick = () => allowLiveTrading().catch((e) => toast(e.message));
-$("#btn-paper-only").onclick = () => paperBetsOnly().catch((e) => toast(e.message));
-$("#btn-allow-live-top").onclick = async () => {
+$("#btn-allow-live")?.addEventListener("click", () => allowLiveTrading().catch((e) => toast(e.message)));
+$("#btn-paper-only")?.addEventListener("click", () => paperBetsOnly().catch((e) => toast(e.message)));
+$("#btn-allow-live-top")?.addEventListener("click", () => openSettings("#api-credentials-card"));
+$("#skip-live-confirm")?.addEventListener("change", async (ev) => {
   try {
-    const s = await api("/api/status");
-    if (!s.dry_run) {
-      openSettings("#arm-card");
-      return;
-    }
-    await allowLiveTrading();
+    const on = Boolean(ev.target.checked);
+    await api("/api/settings/mode", {
+      method: "POST",
+      body: JSON.stringify({ skip_live_confirm: on }),
+    });
+    skipLiveConfirm = on;
+    toast(on ? "Skip LIVE confirm on" : "Skip LIVE confirm off");
   } catch (e) {
     toast(e.message);
+    ev.target.checked = skipLiveConfirm;
   }
-};
+});
 
 function money(v) {
   const n = Number(v);
@@ -1597,27 +1638,26 @@ $("#btn-totp-confirm").onclick = async () => {
   }
 };
 
-$("#btn-arm").onclick = async () => {
-  try {
-    const r = await api("/api/trading/arm", {
-      method: "POST",
-      body: JSON.stringify({
-        confirm_phrase: $("#arm-phrase").value,
-        totp_code: $("#arm-totp").value || null,
-      }),
-    });
-    if (!r.ok && $("#safety-out")) $("#safety-out").textContent = r.error || "Could not arm";
-    toast(r.ok ? "Real orders are on" : r.error);
-    refreshStatus();
-  } catch (e) {
-    toast(e.message);
-  }
-};
-$("#btn-disarm").onclick = async () => {
-  await api("/api/trading/disarm", { method: "POST", body: "{}" });
-  toast("Real orders paused");
-  refreshStatus();
-};
+const btnArm = $("#btn-arm");
+if (btnArm) {
+  btnArm.onclick = async () => {
+    try {
+      await setTradingMode("live", { totpCode: $("#arm-totp")?.value || null });
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+}
+const btnDisarm = $("#btn-disarm");
+if (btnDisarm) {
+  btnDisarm.onclick = async () => {
+    try {
+      await setTradingMode("paper");
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+}
 
 /* installable app */
 let deferredInstall = null;

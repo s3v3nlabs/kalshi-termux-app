@@ -246,9 +246,6 @@ def test_armed_live_posts_signed_v2_and_reports_fill(live_env):
     client = _client_with(live_env, [_Resp(201, ack)], captured)
     gate = OrderGate(Store(live_env / "o.db"), client)
     settings.dry_run = False
-    assert gate.place("KXT-1", "yes", 1, price_cents=22)["dry_run"] is True  # allowed, not armed
-    assert captured == []
-    assert gate.arm_live("ARM LIVE")["ok"]
     res = gate.place("KXT-1", "yes", 1, price_cents=22, order_type="ioc")
     assert res["ok"] and res["dry_run"] is False
     assert "filled 1.00" in res["message"]
@@ -278,7 +275,6 @@ def test_armed_live_410_is_friendly_and_logged(live_env):
     store = Store(live_env / "o.db")
     gate = OrderGate(store, client)
     settings.dry_run = False
-    gate.arm_live("ARM LIVE")
     res = gate.place("KXT-1", "yes", 1, price_cents=22)
     assert res["ok"] is False
     assert res["http_status"] == 410
@@ -291,7 +287,6 @@ def test_gate_refuses_missing_price_and_unknown_type_before_network(live_env):
     client = _client_with(live_env, [], captured)
     gate = OrderGate(Store(live_env / "o.db"), client)
     settings.dry_run = False
-    gate.arm_live("ARM LIVE")
     assert gate.place("KXT-1", "yes", 1)["error_code"] == "price_required"
     assert gate.place("KXT-1", "yes", 1, price_cents=22, order_type="stop")["ok"] is False
     assert gate.place("KXT-1", "yes", 1, price_cents=100)["ok"] is False

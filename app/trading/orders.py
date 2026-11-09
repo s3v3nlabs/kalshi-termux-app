@@ -1,4 +1,4 @@
-"""Order gate. Real orders only when live trading is allowed AND ARM LIVE is set."""
+"""Order gate. PAPER vs LIVE mode. LIVE sends real orders when Kalshi keys exist."""
 from __future__ import annotations
 
 import uuid
@@ -10,15 +10,11 @@ from app.db.store import Store
 from app.kalshi.client import ORDER_TYPES, KalshiClient, friendly_order_error, to_create_order_v2
 
 
-LIVE_CONFIRM_PHRASE = "ARM LIVE"
-
-
 class OrderGate:
     def __init__(self, store: Store, client: Optional[KalshiClient] = None, ledger: Optional[Ledger] = None):
         self.store = store
         self.client = client or KalshiClient()
         self.ledger = ledger
-        self._live_armed = False
 
     def _record_fill(self, ticker: str, side: str, contracts: float, price: float, source: str = "manual") -> Optional[int]:
         """Write a bets row for a fill. Model prob = latest model run for the ticker."""
@@ -45,60 +41,62 @@ class OrderGate:
 
     @property
     def dry_run(self) -> bool:
-        # Real place_order only when live is allowed AND this session is armed.
-        if settings.dry_run:
-            return True
-        return not self._live_armed
+        """True only in PAPER mode. LIVE without keys refuses the order (does not paper)."""
+        return bool(settings.dry_run)
 
     @property
     def live_armed(self) -> bool:
-        return self._live_armed and not settings.dry_run
+        """True when mode is LIVE (persisted). Real sends still need Kalshi keys."""
+        return not bool(settings.dry_run)
 
     def status(self) -> dict:
-        paper_only = bool(settings.dry_run)
-        armed = bool(self._live_armed) and not paper_only
-        if armed:
-            label = "Live armed"
-        elif not paper_only:
-            label = "Live ready"
+        paper = bool(settings.dry_run)
+        live = not paper
+        has_keys = bool(settings.has_keys)
+        if paper:
+            label = "PAPER"
+            detail = "Paper bets — no money is sent"
+        elif not has_keys:
+            label = "Live — add Kalshi keys in Settings"
+            detail = "Live mode on. Add Kalshi keys in Settings before orders spend money."
         else:
-            label = "Paper bets"
+            label = "LIVE"
+            detail = "Live — real orders use your Kalshi balance"
         return {
-            "dry_run": paper_only,
+            "dry_run": paper,
             "env_dry_run": bool(settings.env_dry_run),
-            "live_allowed": not paper_only,
-            "live_armed": armed,
-            "orders_are_paper": not armed,
-            "effective_mode": "LIVE" if armed else "PAPER",
+            "live_allowed": live,
+            "live_armed": live,
+            "orders_are_paper": paper,
+            "effective_mode": "PAPER" if paper else "LIVE",
             "mode_label": label,
-            "confirm_phrase": LIVE_CONFIRM_PHRASE,
-            "has_keys": settings.has_keys,
+            "mode_detail": detail,
+            "has_keys": has_keys,
+            "can_trade_live": live and has_keys,
+            "confirm_phrase": "",
         }
 
-    def arm_live(self, confirm_phrase: str, totp_ok: bool = True) -> dict:
-        if settings.dry_run:
-            return {
-                "ok": False,
-                "error": "Paper bets are on. Tap Allow live trading first. You still type ARM LIVE before any real bet.",
-            }
-        if confirm_phrase.strip() != LIVE_CONFIRM_PHRASE:
-            return {"ok": False, "error": 'Type ARM LIVE exactly to turn on real orders.'}
+    def set_live(self, totp_ok: bool = True) -> dict:
+        """Switch to LIVE mode. No typed phrase. Optional TOTP if the user enabled it."""
         if not totp_ok:
             return {"ok": False, "error": "Extra lock code did not match."}
-        if not settings.has_keys:
-            return {"ok": False, "error": "Add your Kalshi key in Settings before real orders."}
-        self._live_armed = True
-        self.store.log_activity("safety", "Real orders armed")
+        settings.dry_run = False
+        self.store.log_activity("safety", "LIVE mode on")
         return {"ok": True, "mode": "LIVE", **self.status()}
 
+    def set_paper(self) -> dict:
+        """Switch to PAPER mode instantly."""
+        settings.dry_run = True
+        self.store.log_activity("safety", "PAPER mode on — no money is sent")
+        return {"ok": True, "mode": "PAPER", **self.status()}
+
+    def arm_live(self, confirm_phrase: str = "", totp_ok: bool = True) -> dict:
+        """Compat alias: switch to LIVE. Typed ARM LIVE is no longer required."""
+        return self.set_live(totp_ok=totp_ok)
+
     def disarm(self) -> dict:
-        self._live_armed = False
-        if settings.dry_run:
-            message = "Real orders off — paper bets only"
-        else:
-            message = "Real orders off — live trading still allowed until you arm again"
-        self.store.log_activity("safety", message)
-        return {"ok": True, **self.status()}
+        """Compat alias: switch to PAPER."""
+        return self.set_paper()
 
     def place(
         self,
@@ -179,6 +177,18 @@ class OrderGate:
                 "payload": payload,
                 "v2_request": v2_body,
                 "bet_id": bet_id,
+            }
+
+        # LIVE without keys: refuse — never silently paper-trade
+        if not settings.has_keys:
+            msg = "Live — add Kalshi keys in Settings"
+            self.store.log_activity("safety", msg, {"ticker": ticker})
+            return {
+                "ok": False,
+                "dry_run": False,
+                "error": msg,
+                "error_code": "keys_required",
+                "mode_label": msg,
             }
 
         # LIVE

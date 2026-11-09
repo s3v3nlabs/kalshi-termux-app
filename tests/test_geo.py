@@ -54,6 +54,7 @@ def test_order_endpoint_blocks_sports(monkeypatch):
 
     monkeypatch.delenv("GEO_LOCAL_STATE", raising=False)
     http = TestClient(app)
+    assert http.post("/api/settings/mode", json={"mode": "paper"}).status_code == 200
     r = http.post(
         "/api/trading/order",
         json={"ticker": "KXNFLGAME-26NOV08TBCHI-CHI", "side": "yes", "count": 1, "price_cents": 50},

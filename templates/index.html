@@ -16,17 +16,26 @@
 </head>
 <body>
   <div class="arm-strip" id="arm-strip" role="region" aria-label="Trading mode">
-    <span class="arm-mode" id="strip-mode">PAPER</span>
+    <div class="mode-switch" id="mode-switch" role="group" aria-label="PAPER or LIVE">
+      <button type="button" class="mode-seg paper" id="strip-paper" aria-pressed="false">PAPER</button>
+      <button type="button" class="mode-seg live" id="strip-live" aria-pressed="true">LIVE</button>
+    </div>
+    <span class="arm-mode live" id="strip-mode">LIVE</span>
     <span class="arm-stat"><small>Bankroll</small><b id="strip-bankroll">—</b></span>
     <span class="arm-stat"><small>Today P&amp;L</small><b id="strip-pnl">$0.00</b></span>
-    <button class="auto-toggle off" id="strip-auto" type="button" role="switch" aria-checked="false" title="Auto-bet: places scanner picks on its own. Real money only when ARM LIVE is on.">AUTO <b id="strip-auto-state">OFF</b></button>
+    <button class="auto-toggle off" id="strip-auto" type="button" role="switch" aria-checked="false" title="Auto-bet: places scanner picks on its own. Real money only in LIVE mode with keys.">AUTO <b id="strip-auto-state">OFF</b></button>
     <span class="arm-stat auto-stat" id="strip-auto-box"><small>Auto-bet</small><b id="strip-auto-stat">off</b></span>
-    <form class="arm-form" id="strip-arm-form" autocomplete="off">
-      <input id="strip-arm-phrase" placeholder="type ARM LIVE" aria-label="Type ARM LIVE to arm real orders" autocomplete="off" />
-      <input id="strip-arm-totp" class="hidden" inputmode="numeric" placeholder="code" aria-label="Extra lock code" autocomplete="one-time-code" />
-      <button class="btn danger" id="strip-arm" type="submit">ARM LIVE</button>
-      <button class="btn ghost hidden" id="strip-disarm" type="button">Disarm</button>
-    </form>
+  </div>
+  <div class="live-confirm-sheet hidden" id="live-confirm-sheet" role="dialog" aria-label="Confirm LIVE mode">
+    <div class="live-confirm-inner">
+      <strong>Switch to LIVE?</strong>
+      <span class="muted">Real orders will use your Kalshi balance. Sports still respect the geo gate.</span>
+      <input id="strip-arm-totp" class="hidden" inputmode="numeric" placeholder="extra lock code" aria-label="Extra lock code" autocomplete="one-time-code" />
+      <div class="live-confirm-actions">
+        <button class="btn ghost" id="cancel-live" type="button">Cancel</button>
+        <button class="btn danger" id="confirm-live" type="button">Confirm LIVE</button>
+      </div>
+    </div>
   </div>
   <div class="app-shell">
     <header class="topbar">
@@ -49,12 +58,12 @@
       <button class="btn ghost" id="btn-open-settings" type="button">Open Settings</button>
     </div>
 
-    <div class="notice live-cta" id="live-cta" role="status">
+    <div class="notice live-cta hidden" id="live-cta" role="status">
       <div>
-        <strong id="live-cta-title">Want real bets?</strong>
-        <span class="muted" id="live-cta-text">Allow live trading in Settings. You still type ARM LIVE before any order spends money.</span>
+        <strong id="live-cta-title">Live — add Kalshi keys</strong>
+        <span class="muted" id="live-cta-text">Mode is LIVE. Add your Kalshi key in Settings so orders can spend your balance.</span>
       </div>
-      <button class="btn" id="btn-allow-live-top" type="button">Allow live trading</button>
+      <button class="btn" id="btn-allow-live-top" type="button">Open Settings</button>
     </div>
 
     <nav class="nav" id="nav" aria-label="Sections">
@@ -77,8 +86,8 @@
         <ol class="howto">
           <li><strong>Scan.</strong> Tap <strong>Scan live</strong>. The most mispriced markets (model vs market) are on top; it refreshes every 5 seconds.</li>
           <li><strong>Pick a market.</strong> Tap a row to see why the model disagrees. Tap <strong>Buy</strong> to land on <strong>Bet</strong> with the price filled in.</li>
-          <li><strong>Try a paper bet.</strong> Paper bets use no money and stay on this phone.</li>
-          <li><strong>Real bets</strong> take two steps in Settings: <strong>Allow live trading</strong> (saved), then type <strong>ARM LIVE</strong> (this session only).</li>
+          <li><strong>Mode.</strong> Top strip is <strong>PAPER | LIVE</strong>. Fresh install starts on <strong>LIVE</strong>. Tap PAPER anytime for no-money bets.</li>
+          <li><strong>Keys.</strong> Add your Kalshi key in Settings before LIVE orders can spend money.</li>
           <li><strong>ESPN</strong> tags mean the game was matched to ESPN's live scoreboard. It is context, not a sure thing.</li>
         </ol>
         <p class="muted">Add to your home screen: in Chrome tap <strong>⋮ → Add to Home screen</strong> (or <strong>Install app</strong> below). Termux must stay running in the background.</p>
@@ -87,7 +96,7 @@
       <div class="card">
         <h2>Scanner · ranked by mispricing</h2>
         <p class="muted">Which markets does the model think are most mispriced? Rank = |Nash equilibrium P − market P| over the 10 busiest markets, then the rest by payout. Tap a row for the model inputs. Estimates only — nothing here is guaranteed.</p>
-        <p class="muted scan-help">Scanning works without a key. Paper bets (no money) stay on this phone. Real bets use your Kalshi balance after you allow live trading and type ARM LIVE.</p>
+        <p class="muted scan-help">Scanning works without a key. Top strip PAPER | LIVE picks the mode. LIVE uses your Kalshi balance once keys are saved.</p>
         <div class="row" style="margin-top:10px">
           <button class="btn big" id="btn-scan" type="button">Scan live</button>
           <button class="btn ghost" id="btn-scan-force" type="button">Force refresh</button>
@@ -197,8 +206,8 @@
       </div>
       <div class="card">
         <h2>Place a bet</h2>
-        <p class="muted">Paper bets (no money) stay on this phone. Real bets (uses Kalshi balance) need <strong>Allow live trading</strong>, then type <strong>ARM LIVE</strong>.</p>
-        <div class="mode-strip" id="order-mode-strip">Paper bet — no money is sent</div>
+        <p class="muted">Top strip PAPER | LIVE. LIVE bets use your Kalshi balance. PAPER bets stay on this phone.</p>
+        <div class="mode-strip" id="order-mode-strip">LIVE — uses your Kalshi balance</div>
         <label>Side</label>
         <div class="side-toggle" role="group" aria-label="Side">
           <button type="button" class="side-btn yes active" data-side="yes">Buy YES</button>
@@ -288,8 +297,8 @@
           <li>Set an <strong>app lock password</strong> and tap Unlock.</li>
           <li>Paste your <strong>Kalshi Key ID</strong> and <strong>private key text</strong>, then <strong>Save on this phone</strong>.</li>
           <li>Open Account and check <strong>Balance</strong>.</li>
-          <li>Use Scan. <strong>Paper bets (no money)</strong> are optional and do not spend anything.</li>
-          <li>For <strong>real bets (uses Kalshi balance)</strong>: tap <strong>Allow live trading</strong>, then type <strong>ARM LIVE</strong>.</li>
+          <li>Use Scan. Tap <strong>PAPER</strong> in the top strip for no-money bets, or stay on <strong>LIVE</strong> for real bets.</li>
+          <li>LIVE needs your Kalshi key saved below. Optional: turn on <strong>Skip LIVE confirm</strong> for one-tap switches.</li>
           <li>Every bet needs a <strong>max price</strong> in whole cents. You never pay more than that per contract.</li>
         </ol>
         <p class="muted">Ed25519 (Kalshi's default) and RSA keys both work.</p>
@@ -298,28 +307,14 @@
       <div class="card mode-card" id="trading-mode-card">
         <h2>Trading mode</h2>
         <div class="mode-hero">
-          <span class="mode-pill ok" id="mode-pill">Paper bets (no money)</span>
-          <p class="mode-detail" id="mode-detail">Orders stay on this phone. Tap Allow live trading when you want real bets.</p>
+          <span class="mode-pill danger" id="mode-pill">LIVE</span>
+          <p class="mode-detail" id="mode-detail">Top strip PAPER | LIVE. Fresh install starts on LIVE. Mode is saved on this phone.</p>
         </div>
-        <div class="mode-actions">
-          <button class="btn" id="btn-allow-live" type="button">Allow live trading</button>
-          <button class="btn ghost" id="btn-paper-only" type="button">Paper bets only</button>
-        </div>
-        <p class="muted">Allow live trading does not place an order. You still type ARM LIVE before the first real bet. No .env edit needed.</p>
-      </div>
-
-      <div class="card" id="arm-card">
-        <h2>Turn on real orders (extra step)</h2>
-        <p class="muted" id="arm-help">After Allow live trading, type ARM LIVE once. Then Place bet can spend your Kalshi balance. Disarm stops real orders until you arm again.</p>
-        <label>Type ARM LIVE</label>
-        <input id="arm-phrase" placeholder="ARM LIVE" autocomplete="off" />
-        <label>Extra lock code (only if you set one up)</label>
-        <input id="arm-totp" type="text" inputmode="numeric" placeholder="Skip this if you did not set one" />
-        <div class="row" style="margin-top:10px">
-          <button class="btn danger" id="btn-arm" type="button">Arm LIVE</button>
-          <button class="btn ghost" id="btn-disarm" type="button">Disarm</button>
-        </div>
-        <p class="muted" id="safety-out" style="margin-top:8px"></p>
+        <label class="check-row" for="skip-live-confirm">
+          <input type="checkbox" id="skip-live-confirm" />
+          <span>Skip LIVE confirm — one tap switches to LIVE (still needs keys for real orders)</span>
+        </label>
+        <p class="muted" id="safety-out" style="margin-top:8px">Use the top strip switch. Optional extra lock code still applies if you set one up under Advanced.</p>
       </div>
 
       <div class="card">
@@ -396,6 +391,15 @@
         </div>
         <p class="muted">Technical detail: the app lock is stored in an encrypted file on this phone, and your mode choice is saved in local app data. Nothing here is your Kalshi login.</p>
       </details>
+    <div class="hidden" aria-hidden="true">
+        <button id="btn-allow-live" type="button"></button>
+        <button id="btn-paper-only" type="button"></button>
+        <button id="btn-arm" type="button"></button>
+        <button id="btn-disarm" type="button"></button>
+        <input id="arm-phrase" />
+        <input id="arm-totp" />
+        <div id="arm-card"></div>
+      </div>
     </section>
 
     <!-- ACTIVITY -->
@@ -416,7 +420,7 @@
     <p class="footer-note">
       Prediction markets involve risk of loss. Not financial advice.
       Edge / coherence / simulations are estimates — <strong>no 100% win rate</strong>.
-      Fresh install uses paper bets until you tap Allow live trading. Real orders still need ARM LIVE.
+      Fresh install starts on LIVE. Tap PAPER anytime. Sports geo-gate stays fail-closed.
       Host: {{ host }}
     </p>
   </div>

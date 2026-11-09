@@ -69,6 +69,15 @@ Rows expose `prob_source` and `model_p_source` (`espn_live` | `espn_pre` | `mark
 - Nov 5 2026 fixed-point changes affect Perps / Clearing Member (`_fp` 6-decimal dollars) and fractional contracts on margin markets; event-market create-order is unchanged. This app sends whole cents / whole contracts, which are valid on every price grid.
 - Default bind is now `127.0.0.1`.
 
+## PAPER | LIVE fast switch (Nov 2026)
+
+- Fresh install defaults to **LIVE** (`DRY_RUN=0` / `env_dry_run` default False). Saved choice in `data/ui_prefs.json` still wins.
+- Typed **ARM LIVE** removed. Top sticky strip is a segmented **PAPER | LIVE** control (44px taps, vanilla JS).
+- PAPER is instant. LIVE is one tap + optional inline confirm sheet, or instant when **Skip LIVE confirm** is on in Settings. Optional TOTP still checked on LIVE if the user enabled it.
+- Mode persists across restarts. LIVE without Kalshi keys shows **Live — add Kalshi keys in Settings** and refuses orders (no silent paper-trade).
+- AUTO stays OFF by default and independent; with LIVE it paints **AUTO ON · LIVE**.
+- Sports geo-gate unchanged (fail closed). No lock/guarantee wording.
+
 ## Remaining gaps
 
 1. **Authenticated endpoints need Operator keys** (`KALSHI_KEY_ID` + `secrets/kalshi.key`). Without them: public scan/status work; balance/positions/live orders do not.

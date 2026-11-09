@@ -85,7 +85,7 @@ def test_live_fill_writes_bet_only_when_filled(tmp_path):
         settings.dry_run, settings.key_id, settings.key_path = False, "unit", key
         led = Ledger(tmp_path / "l.db")
         gate = OrderGate(Store(tmp_path / "s.db"), Fake(), led)
-        gate.arm_live("ARM LIVE")
+        # LIVE mode = not dry_run
         assert gate.place("KX-2", "yes", 1, price_cents=30)["bet_id"] is None
         res = gate.place("KX-2", "no", 2, price_cents=45)
         bet = led.bets_sync()[0]

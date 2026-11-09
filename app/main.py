@@ -34,7 +34,12 @@ from app.strategy.monte_carlo import double_slit_simulation, sim_to_dict
 from app.strategy.nash import nash_decision, nash_to_dict
 from app.strategy.scanner import enrich_market, model_run_rows, scan_opportunities
 from app.trading.orders import OrderGate
-from app.ui_prefs import apply_saved_mode, save_dry_run_override
+from app.ui_prefs import (
+    apply_saved_mode,
+    load_skip_live_confirm,
+    save_dry_run_override,
+    save_skip_live_confirm,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -191,6 +196,7 @@ def api_status():
         "vault_unlocked": vault.unlocked,
         "app_unlocked": _app_unlocked,
         "totp_configured": bool(vault.unlocked and totp_mgr.has_seed()),
+        "skip_live_confirm": load_skip_live_confirm(store),
         "bucket": client.bucket.status(),
         "exchange": ping,
         "exchange_error": err,
@@ -617,7 +623,7 @@ def api_bet_settle(bet_id: int, body: SettleBody):
 # ---------- trading ----------
 
 class ArmBody(BaseModel):
-    confirm_phrase: str
+    confirm_phrase: Optional[str] = None  # ignored; LIVE no longer needs typed ARM LIVE
     totp_code: Optional[str] = None
 
 
@@ -639,16 +645,23 @@ def trading_status():
 
 @app.post("/api/trading/arm")
 def trading_arm(body: ArmBody):
+    """Switch to LIVE (persisted). Typed phrase is ignored; optional TOTP still checked."""
     totp_ok = True
     if vault.unlocked and totp_mgr.has_seed():
         secret = totp_mgr.load_seed()
         totp_ok = totp_mgr.verify(secret or "", body.totp_code or "")
-    return orders.arm_live(body.confirm_phrase, totp_ok=totp_ok)
+    result = orders.set_live(totp_ok=totp_ok)
+    if result.get("ok"):
+        save_dry_run_override(False, store)
+    return result
 
 
 @app.post("/api/trading/disarm")
 def trading_disarm():
-    return orders.disarm()
+    """Switch to PAPER (persisted)."""
+    result = orders.set_paper()
+    save_dry_run_override(True, store)
+    return result
 
 
 @app.post("/api/trading/order")
@@ -704,6 +717,9 @@ class HostBody(BaseModel):
 class ModeBody(BaseModel):
     dry_run: Optional[bool] = None
     allow_live: Optional[bool] = None
+    mode: Optional[str] = None  # "paper" | "live"
+    totp_code: Optional[str] = None
+    skip_live_confirm: Optional[bool] = None
 
 
 class TotpSetupBody(BaseModel):
@@ -741,9 +757,8 @@ def vault_unlock(body: UnlockBody):
 def vault_lock():
     global _app_unlocked
     vault.lock()
-    orders.disarm()
     _app_unlocked = False
-    store.log_activity("security", "Vault locked; live disarmed")
+    store.log_activity("security", "Vault locked")
     return {"ok": True}
 
 
@@ -805,22 +820,49 @@ def clear_settings_keys(body: ClearKeysBody):
 
 @app.post("/api/settings/mode")
 def settings_mode(body: ModeBody):
-    """Persist paper vs live-allowed. Allowing live does not arm real orders."""
-    if body.dry_run is None and body.allow_live is None:
-        raise HTTPException(400, "Send dry_run or allow_live")
+    """Persist PAPER vs LIVE. LIVE trades for real once Kalshi keys exist."""
+    if body.skip_live_confirm is not None and (
+        body.dry_run is None and body.allow_live is None and body.mode is None
+    ):
+        save_skip_live_confirm(bool(body.skip_live_confirm), store)
+        store.log_activity(
+            "settings",
+            "Skip LIVE confirm ON" if body.skip_live_confirm else "Skip LIVE confirm OFF",
+        )
+        return {"ok": True, "skip_live_confirm": bool(body.skip_live_confirm), **orders.status()}
+
+    mode = (body.mode or "").strip().lower() or None
+    if body.dry_run is None and body.allow_live is None and mode is None:
+        raise HTTPException(400, "Send mode, dry_run, or allow_live")
     if body.dry_run is not None and body.allow_live is not None and body.dry_run == body.allow_live:
         raise HTTPException(400, "dry_run and allow_live disagree")
-    if body.dry_run is not None:
+    if mode is not None:
+        if mode not in {"paper", "live"}:
+            raise HTTPException(400, 'mode must be "paper" or "live"')
+        dry_run = mode == "paper"
+    elif body.dry_run is not None:
         dry_run = bool(body.dry_run)
     else:
         dry_run = not bool(body.allow_live)
-    settings.dry_run = dry_run
+
+    if not dry_run:
+        totp_ok = True
+        if vault.unlocked and totp_mgr.has_seed():
+            secret = totp_mgr.load_seed()
+            totp_ok = totp_mgr.verify(secret or "", body.totp_code or "")
+        if not totp_ok:
+            raise HTTPException(401, "Extra lock code did not match.")
+        result = orders.set_live(totp_ok=True)
+    else:
+        result = orders.set_paper()
     save_dry_run_override(dry_run, store)
-    if dry_run:
-        orders.disarm()
-    note = "Paper bets only" if dry_run else "Live trading allowed (ARM LIVE still required)"
+    if body.skip_live_confirm is not None:
+        save_skip_live_confirm(bool(body.skip_live_confirm), store)
+    note = "PAPER mode" if dry_run else "LIVE mode"
     store.log_activity("settings", note)
-    return {"ok": True, **orders.status()}
+    out = {"ok": True, **orders.status(), "skip_live_confirm": load_skip_live_confirm(store)}
+    out.update({k: result[k] for k in ("ok",) if k in result})
+    return out
 
 
 @app.post("/api/settings/host")

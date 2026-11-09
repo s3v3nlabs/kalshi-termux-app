@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 export PYTHONPATH="${PYTHONPATH:-}:$(pwd)"
-# 127.0.0.1 keeps the portal (and ARM LIVE) private to this phone.
+# 127.0.0.1 keeps the portal (and LIVE mode) private to this phone.
 # HOST=0.0.0.0 ./start.sh exposes it to everyone on your Wi-Fi; only do that on a trusted network.
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8787}"

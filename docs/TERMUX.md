@@ -27,14 +27,14 @@ Optional: put the RSA PEM at `secrets/kalshi.key` (`chmod 600`) and set `KALSHI_
 
 ## Trading mode
 
-A fresh install uses **paper bets (no money)** until you choose otherwise. You do not edit `.env`.
+A fresh install starts on **LIVE**. You do not edit `.env` to change mode.
 
-1. Open **Settings** and tap **Allow live trading**. Confirm the warning.
+1. Top strip **PAPER | LIVE** — PAPER is instant; LIVE confirms once (or instantly if Skip LIVE confirm is on).
 2. Set the **app lock password**, paste your Kalshi Key ID and private key text, then **Save on this phone**.
-3. Type **ARM LIVE** before any real order. That step is what can spend your Kalshi balance.
-4. **Disarm** stops real orders and leaves live trading allowed. **Paper bets only** turns real trading off.
+3. Without keys, LIVE shows **Live — add Kalshi keys in Settings** and will not silently paper-trade.
+4. Optional extra lock code (TOTP) still applies when switching to LIVE if you set one up.
 
-`DRY_RUN=1` is only the boot default when no saved choice exists. The app stores the choice under local `data/` (not committed).
+`DRY_RUN=0` is the boot default when no saved choice exists. The app stores PAPER|LIVE under local `data/` (not committed).
 
 ## If the import still fails
 
@@ -86,4 +86,4 @@ pip install fastapi uvicorn requests python-dotenv pyotp jinja2 pydantic tzdata 
 
 ## Auto-bet and continuous learning on the phone
 
-Both run inside the server process, so they only work while Termux is running `./start.sh`. Run `termux-wake-lock` first so Android does not suspend Termux with the screen off. Auto-bet is OFF until you tap **AUTO** in the top strip; it places real orders only while live trading is allowed and ARM LIVE is set. Set `GEO_LOCAL_STATE` in `.env` or every sports market stays blocked (also for Auto-bet).
+Both run inside the server process, so they only work while Termux is running `./start.sh`. Run `termux-wake-lock` first so Android does not suspend Termux with the screen off. Auto-bet is OFF until you tap **AUTO** in the top strip; it places real orders only while mode is LIVE and Kalshi keys exist. Set `GEO_LOCAL_STATE` in `.env` or every sports market stays blocked (also for Auto-bet).
