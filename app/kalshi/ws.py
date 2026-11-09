@@ -129,7 +129,9 @@ class MarketStream:
         return out[:WS_WATCH_MAX]
 
     def set_watch(self, group: str, tickers: Iterable[str]) -> None:
-        self._groups[group] = {str(t) for t in tickers if t}
+        groups = dict(self._groups)  # copy-and-swap: safe from worker threads
+        groups[group] = {str(t) for t in tickers if t}
+        self._groups = groups
         if self._loop is not None and self._conn is not None:
             try:
                 self._loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self._sync_watch()))

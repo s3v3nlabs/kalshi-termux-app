@@ -650,6 +650,20 @@ class KalshiClient:
     def get_series(self, series_ticker: str) -> dict:
         return self.public_get(f"/trade-api/v2/series/{series_ticker}")
 
+    def get_milestones(self, event_ticker: str, limit: int = 5) -> list:
+        """Milestones (games) linked to an event. Public."""
+        data = self.public_get("/trade-api/v2/milestones", params={"related_event_ticker": event_ticker, "limit": limit})
+        return data.get("milestones") or []
+
+    def get_live_data_batch(self, milestone_ids: list) -> list:
+        """GET /live_data/batch (repeated ``milestone_ids``; <=100 per call). Public."""
+        out: list = []
+        ids = [m for m in dict.fromkeys(milestone_ids) if m]
+        for i in range(0, len(ids), 100):
+            data = self.public_get("/trade-api/v2/live_data/batch", params={"milestone_ids": ids[i : i + 100]})
+            out.extend(data.get("live_datas") or [])
+        return out
+
     def get_market(self, ticker: str) -> dict:
         return self.public_get(f"/trade-api/v2/markets/{ticker}")
 

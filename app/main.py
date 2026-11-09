@@ -84,6 +84,7 @@ async def _lifespan(_app):
         tasks.append(asyncio.create_task(_budget_loop(), name="budget"))
         tasks.append(asyncio.create_task(stream.run_forever(), name="stream"))
         tasks.append(asyncio.create_task(autobet.run_forever(), name="autobet"))
+        tasks.append(asyncio.create_task(sniper.run_forever(), name="sniper"))
         tasks.append(asyncio.create_task(learner.run_forever(), name="learner"))
     try:
         yield
@@ -175,6 +176,28 @@ autobet = AutoBetEngine(store=store, ledger=ledger, orders=orders, scan_fn=_auto
                         exchange_gate=exchange_gate, fee_multiplier_fn=series_fees.multiplier)
 learner = Learner(ledger=ledger, store=store, client_fn=lambda: client)
 
+from app.strategy.espn import get_board  # noqa: E402
+from app.trading.sniper import Sniper  # noqa: E402
+
+
+def _ws_quotes(tickers: list) -> dict:
+    out = {}
+    for t in tickers:
+        q = books.quote(t)
+        if q:
+            out[t] = q
+    return out
+
+
+sniper = Sniper(
+    store=store, ledger=ledger, orders=orders, client_fn=lambda: client,
+    bankroll_fn=lambda live: autobet._bankroll(live),
+    held_fn=lambda live: autobet._held(live)[0],
+    exchange_gate=exchange_gate, fee_multiplier_fn=series_fees.multiplier,
+    quotes_fn=_ws_quotes, watch_fn=lambda ts: stream.set_watch("sniper", ts),
+    espn_fn=lambda m: get_board().estimate(m),
+)
+
 _LAST_ASK: dict[str, tuple] = {}
 
 
@@ -188,6 +211,10 @@ def _on_stream_event(kind: str, msg: dict) -> None:
         except RuntimeError:
             fn(msg)
         return
+    if kind in {"trade", "lifecycle", "ticker", "book"}:
+        st = msg.get("ticker") or msg.get("market_ticker")
+        if st and st.upper() in sniper.watched:
+            sniper.poke(st)  # near-finish game moved: re-score now (rate-limited)
     if kind not in {"ticker", "book"}:
         return
     t = msg.get("ticker")
@@ -309,6 +336,7 @@ def api_status():
         "skip_live_confirm": load_skip_live_confirm(store),
         "bucket": client.bucket.status(),
         "stream": stream.status(),
+        "sniper": {k: sniper.status()[k] for k in ("enabled", "mode", "hot", "watching")},
         "exchange": ping,
         "exchange_error": err,
         "disclaimer": "Not financial advice. No guaranteed win rate. Risk of loss.",
@@ -683,6 +711,29 @@ def autobet_toggle(body: AutoBetBody):
     """ON/OFF. OFF takes effect before the next order, even mid-cycle."""
     autobet.set_enabled(body.enabled)
     return {"ok": True, **autobet.status(), "order_gate": orders.status()}
+
+
+class SniperBody(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/sniper")
+def sniper_status():
+    return {"ok": True, **sniper.status(), "order_gate": orders.status()}
+
+
+@app.post("/api/sniper")
+def sniper_toggle(body: SniperBody):
+    """Near-finish sniper ON/OFF (OFF by default). Respects PAPER/LIVE."""
+    sniper.set_enabled(body.enabled)
+    return {"ok": True, **sniper.status(), "order_gate": orders.status()}
+
+
+@app.post("/api/sniper/run")
+def sniper_run_now():
+    if not sniper.enabled:
+        raise HTTPException(409, "Sniper is OFF. Turn it on first.")
+    return {"ok": True, "cycle": sniper.run_cycle(), **sniper.status()}
 
 
 @app.post("/api/autobet/run")

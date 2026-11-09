@@ -42,7 +42,10 @@ function showPanel(name) {
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.panel === name));
   $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "panel-" + name));
   window.scrollTo({ top: 0, behavior: "smooth" });
-  if (name === "settings") refreshSpeed();
+  if (name === "settings") {
+    refreshSpeed();
+    refreshSniper();
+  }
 }
 $$("#nav button[data-panel]").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1731,6 +1734,36 @@ async function refreshSpeed() {
     $("#tier-out").textContent = "API tier: " + e.message;
   }
 }
+function paintSniper(sn) {
+  if (!sn) return;
+  $("#sniper-on").checked = Boolean(sn.enabled);
+  const lc = sn.last_cycle || {};
+  const parts = [sn.enabled ? (sn.mode === "live" ? "ON · LIVE (real money)" : "ON · PAPER") : "OFF"];
+  if (sn.enabled) {
+    parts.push(`${sn.watching} near-finish market(s) watched`);
+    parts.push(`fires at ≥ ${Math.round(sn.ev_min * 100)}¢ net edge`);
+    parts.push(`cancel after ${sn.cancel_s}s`);
+    if (lc.ts) parts.push(`last ${fmtTs(lc.ts)}${lc.error ? " · " + lc.error : ` +${lc.placed || 0}`}`);
+  }
+  $("#sniper-out").textContent = "Sniper: " + parts.join(" · ");
+}
+async function refreshSniper() {
+  try {
+    paintSniper(await api("/api/sniper"));
+  } catch {}
+}
+$("#sniper-on")?.addEventListener("change", async (ev) => {
+  const on = ev.target.checked;
+  try {
+    const sn = await api("/api/sniper", { method: "POST", body: JSON.stringify({ enabled: on }) });
+    paintSniper(sn);
+    toast(on ? (sn.mode === "live" ? "Sniper ON · LIVE" : "Sniper ON · PAPER") : "Sniper OFF");
+  } catch (e) {
+    toast(e.message);
+    refreshSniper();
+  }
+});
+
 $("#btn-tier-upgrade")?.addEventListener("click", async () => {
   const btn = $("#btn-tier-upgrade");
   btn.disabled = true;
