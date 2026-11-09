@@ -415,7 +415,11 @@ def test_board_caches_primary_slate():
     assert calls.count(("nfl", "20260924")) == 1
 
 
-def test_scan_merges_game_series_without_network():
+def test_scan_merges_game_series_without_network(monkeypatch):
+    # Pin "today" so the Sep 24 fixture stays inside the nearby-games window.
+    import app.strategy.scanner as scanner_mod
+
+    monkeypatch.setattr(scanner_mod, "us_today", lambda: date(2026, 9, 24))
     nfl = _market("KXNFLGAME-26SEP24ATLGB-GB", GB_RULES, yes="0.2000", no="0.8200")
     cheap = {
         "ticker": "KXTEST-CHEAP",

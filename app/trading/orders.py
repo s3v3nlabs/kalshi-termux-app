@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from app.config import settings
 from app.db.store import Store
-from app.kalshi.client import KalshiClient
+from app.kalshi.client import ORDER_TYPES, KalshiClient, friendly_order_error, to_create_order_v2
 
 
 LIVE_CONFIRM_PHRASE = "ARM LIVE"
@@ -84,25 +84,46 @@ class OrderGate:
         coherence: Optional[float] = None,
         order_type: str = "limit",
     ) -> dict:
-        side = side.lower().strip()
+        """Buy YES or NO. ``price_cents`` is the max you will pay (required).
+
+        The same Create Order V2 body is built in paper and live mode, so a
+        paper bet proves the live request would be valid.
+        """
+        side = str(side or "").lower().strip()
+        ticker = str(ticker or "").strip()
         if side not in {"yes", "no"}:
-            return {"ok": False, "error": "side must be yes or no"}
-        if count < 1:
-            return {"ok": False, "error": "count must be >= 1"}
+            return {"ok": False, "error": "Pick YES or NO.", "error_code": "invalid_order"}
+        if not ticker:
+            return {"ok": False, "error": "Pick a market first.", "error_code": "invalid_order"}
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            return {"ok": False, "error": "Contracts must be a whole number, 1 or more.", "error_code": "invalid_order"}
+        if price_cents is None:
+            return {
+                "ok": False,
+                "error": "Set a max price in cents (1-99). Orders without a price are not sent.",
+                "error_code": "price_required",
+            }
+        order_type = str(order_type or "limit").strip().lower()
+        if order_type not in ORDER_TYPES:
+            return {"ok": False, "error": "Order type must be limit, ioc, or fok.", "error_code": "invalid_order"}
 
         client_order_id = str(uuid.uuid4())
         payload: dict[str, Any] = {
             "action": "buy",
             "client_order_id": client_order_id,
-            "count": int(count),
+            "count": count,
             "side": side,
             "ticker": ticker,
-            "type": order_type if price_cents is not None else "market",
+            "type": order_type,
+            ("yes_price" if side == "yes" else "no_price"): price_cents,
         }
-        if price_cents is not None and order_type == "limit":
-            payload["yes_price" if side == "yes" else "no_price"] = int(price_cents)
+        try:
+            v2_body = to_create_order_v2(payload)
+        except ValueError as e:
+            return {"ok": False, **friendly_order_error(e)}
 
-        price = (price_cents / 100.0) if price_cents is not None else None
+        price = price_cents / 100.0
+        cost = round(price * count, 2)
 
         if self.dry_run:
             oid = self.store.log_order(
@@ -113,40 +134,28 @@ class OrderGate:
                 price=price,
                 status="PAPER",
                 coherence=coherence,
-                payload=payload,
+                payload=v2_body,
                 response={"note": "Order NOT sent to Kalshi"},
             )
-            msg = f"Paper bet: would BUY {count}x {side.upper()} {ticker}. Not sent to Kalshi."
-            self.store.log_activity("order", msg, payload)
+            msg = (
+                f"Paper bet: would BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢ "
+                f"(max ${cost:.2f}). Not sent to Kalshi."
+            )
+            self.store.log_activity("order", msg, v2_body)
             return {
                 "ok": True,
                 "dry_run": True,
                 "order_log_id": oid,
                 "message": msg,
                 "payload": payload,
+                "v2_request": v2_body,
             }
 
         # LIVE
         try:
-            resp = self.client.place_order(payload)
-            oid = self.store.log_order(
-                dry_run=False,
-                ticker=ticker,
-                side=side,
-                count=count,
-                price=price,
-                status="SUBMITTED",
-                coherence=coherence,
-                payload=payload,
-                response=resp,
-            )
-            order_id = resp.get("order_id") if isinstance(resp, dict) else None
-            msg = f"[LIVE] Submitted BUY {count}x {side.upper()} {ticker}"
-            if order_id:
-                msg = f"{msg} ({order_id})"
-            self.store.log_activity("order", msg, {"payload": payload, "response": resp})
-            return {"ok": True, "dry_run": False, "order_log_id": oid, "response": resp, "message": msg}
+            resp = self.client.place_order(v2_body)
         except Exception as e:
+            info = friendly_order_error(e)
             oid = self.store.log_order(
                 dry_run=False,
                 ticker=ticker,
@@ -155,8 +164,38 @@ class OrderGate:
                 price=price,
                 status="ERROR",
                 coherence=coherence,
-                payload=payload,
-                response={"error": str(e)},
+                payload=v2_body,
+                response={"error": str(e), **info},
             )
-            self.store.log_activity("error", f"Live order failed: {e}", payload)
-            return {"ok": False, "error": str(e), "order_log_id": oid}
+            self.store.log_activity("error", f"Live order failed: {info['error']}", v2_body)
+            return {"ok": False, "dry_run": False, "order_log_id": oid, **info}
+
+        ack = resp if isinstance(resp, dict) else {}
+        order_id = ack.get("order_id")
+        filled = ack.get("fill_count")
+        remaining = ack.get("remaining_count")
+        oid = self.store.log_order(
+            dry_run=False,
+            ticker=ticker,
+            side=side,
+            count=count,
+            price=price,
+            status="SUBMITTED",
+            coherence=coherence,
+            payload=v2_body,
+            response=resp,
+        )
+        msg = f"[LIVE] Sent BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢"
+        if filled is not None:
+            msg += f" · filled {filled}, resting {remaining}"
+        if order_id:
+            msg += f" ({order_id})"
+        self.store.log_activity("order", msg, {"request": v2_body, "response": resp})
+        return {
+            "ok": True,
+            "dry_run": False,
+            "order_log_id": oid,
+            "response": resp,
+            "message": msg,
+            "v2_request": v2_body,
+        }

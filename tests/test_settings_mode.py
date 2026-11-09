@@ -59,7 +59,7 @@ def test_homepage_mode_and_arm_gate():
 
         placed = http.post(
             "/api/trading/order",
-            json={"ticker": "TEST-SMOKE", "side": "yes", "count": 1},
+            json={"ticker": "TEST-SMOKE", "side": "yes", "count": 1, "price_cents": 22},
         )
         assert placed.status_code == 200
         placed_body = placed.json()
@@ -78,7 +78,7 @@ def test_homepage_mode_and_arm_gate():
         assert http.get("/api/trading/status").json()["live_armed"] is False
         held = http.post(
             "/api/trading/order",
-            json={"ticker": "TEST-SMOKE", "side": "yes", "count": 1},
+            json={"ticker": "TEST-SMOKE", "side": "yes", "count": 1, "price_cents": 22},
         )
         assert held.json()["dry_run"] is True
         assert calls["n"] == 0
@@ -91,9 +91,16 @@ def test_homepage_mode_and_arm_gate():
         assert blocked_arm.json()["ok"] is False
         again = http.post(
             "/api/trading/order",
-            json={"ticker": "TEST-SMOKE", "side": "no", "count": 1},
+            json={"ticker": "TEST-SMOKE", "side": "no", "count": 1, "price_cents": 40},
         )
         assert again.json()["dry_run"] is True
+        no_price = http.post(
+            "/api/trading/order",
+            json={"ticker": "TEST-SMOKE", "side": "no", "count": 1},
+        )
+        assert no_price.status_code == 200
+        assert no_price.json()["ok"] is False
+        assert no_price.json()["error_code"] == "price_required"
         assert calls["n"] == 0
         assert load_dry_run_override(store) is True
     finally:
@@ -137,11 +144,11 @@ def test_real_order_only_when_live_allowed_and_armed(tmp_path):
         gate = OrderGate(Store(tmp_path / "orders.db"), Fake())
         settings.dry_run = True
         assert gate.arm_live("ARM LIVE")["ok"] is False
-        assert gate.place("T", "yes", 1)["dry_run"] is True
+        assert gate.place("T", "yes", 1, price_cents=22)["dry_run"] is True
         assert calls == []
 
         settings.dry_run = False
-        assert gate.place("T", "yes", 1)["dry_run"] is True
+        assert gate.place("T", "yes", 1, price_cents=22)["dry_run"] is True
         assert calls == []
         armed = gate.arm_live("ARM LIVE")
         assert armed["ok"] is True
@@ -150,13 +157,16 @@ def test_real_order_only_when_live_allowed_and_armed(tmp_path):
         assert sent["response"]["order_id"] == "test-order"
         assert "test-order" in sent["message"]
         assert len(calls) == 1
-        assert calls[0]["side"] == "yes"
-        assert calls[0]["yes_price"] == 22
+        # The gate hands the client a validated Create Order V2 body.
+        assert calls[0]["side"] == "bid"
+        assert calls[0]["price"] == "0.2200"
+        assert calls[0]["count"] == "1.00"
+        assert "yes_price" not in calls[0]
         gate.disarm()
         status = gate.status()
         assert status["live_allowed"] is True
         assert status["live_armed"] is False
-        assert gate.place("T", "no", 1)["dry_run"] is True
+        assert gate.place("T", "no", 1, price_cents=40)["dry_run"] is True
         assert len(calls) == 1
     finally:
         settings.dry_run, settings.key_id, settings.key_path = old

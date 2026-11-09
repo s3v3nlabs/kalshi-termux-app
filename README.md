@@ -3,7 +3,8 @@
 Mobile-first **Kalshi prediction-market** web app for Termux → browser.
 
 - **Public** market scan + exchange status (no keys)
-- **Authenticated** balance / positions / orders via RSA-PSS (`KALSHI_KEY_ID` + PEM)
+- **Authenticated** balance / positions / orders via signed requests — Ed25519 (Kalshi default) or RSA-PSS (`KALSHI_KEY_ID` + PEM)
+- **Installable phone app** (PWA): open `http://127.0.0.1:8787` in Chrome → ⋮ → **Add to Home screen**
 - **Strategy**: high-payout scanner, fractional **Kelly**, **Nash** payoff matrix, optional Monte Carlo sim
 - **Safety**: fresh install uses **paper bets** until you tap **Allow live trading**. Real orders still need typed **ARM LIVE** (+ optional extra lock code). No `.env` edit required.
 - **Local security**: Fernet vault, `chmod 600` key file, Aegis-style TOTP — no phone-home
@@ -49,7 +50,7 @@ Install `python-cryptography` from `pkg` and remove any pip-installed `cryptogra
 pkg install -y python-cryptography
 pip install --user -r requirements.txt
 pip uninstall -y cryptography
-PYTHONPATH=. python -m uvicorn app.main:app --host 0.0.0.0 --port 8787
+PYTHONPATH=. python -m uvicorn app.main:app --host 127.0.0.1 --port 8787
 ```
 
 ## Desktop / this machine
@@ -62,6 +63,8 @@ pip install -r requirements.txt
 ```
 
 If port `8787` is busy: `PORT=8788 ./start.sh`.
+
+The server listens on `127.0.0.1` (this phone only) by default. `HOST=0.0.0.0 ./start.sh` lets other devices on your Wi-Fi reach it — including ARM LIVE — so only do that on a network you trust.
 
 ## Config
 
@@ -81,7 +84,24 @@ API hosts (Trade API v2):
 - Also supported: `https://api.elections.kalshi.com`
 - Demo: `https://demo-api.kalshi.co`
 
-Live **Place bet** uses Create Order V2: `POST /trade-api/v2/portfolio/events/orders` (`bid` buys YES, `ask` buys NO, price is a fixed-point dollar on the YES book). Order history still uses `GET /trade-api/v2/portfolio/orders`. Paper bets never call create-order.
+Live **Place bet** uses Create Order V2: `POST /trade-api/v2/portfolio/events/orders` (success = HTTP 201 flat ack `{order_id, fill_count, remaining_count, ts_ms}`). Order history still uses `GET /trade-api/v2/portfolio/orders`. Paper bets build and validate the exact same V2 body but never send it.
+
+| You tap | V2 body sent |
+| --- | --- |
+| Buy YES at 22¢ | `side: "bid", price: "0.2200"` |
+| Buy NO at 40¢ | `side: "ask", price: "0.6000"` (NO at N¢ = sell YES at 100−N¢) |
+| 3 contracts | `count: "3.00"` |
+| Limit / Fill now / All or nothing | `time_in_force: good_till_canceled / immediate_or_cancel / fill_or_kill` |
+
+Always sent: `self_trade_prevention_type: "taker_at_cross"` and a fresh `client_order_id`.
+
+Order limits this app enforces (Kalshi allows more on some markets):
+
+- **A max price is required.** There is no hidden 99¢ "market" order. Blank price = nothing is sent.
+- **Whole cents only, 1–99¢.** Whole cents are valid on every Kalshi `price_ranges` grid, so orders never land off-tick. Sub-cent prices are rejected.
+- **Whole contracts only, 1–10,000 per order.** Fractional counts are rejected.
+- Unknown order types and unknown V2 fields are rejected before anything is signed.
+- Kalshi errors are mapped to plain English (410 retired endpoint, 400 insufficient balance / bad price, 401 key, 403 permission, 409 duplicate, 429 slow down, 5xx "check Orders before retrying").
 
 ## Trading mode
 
@@ -101,8 +121,8 @@ The **Clear local keys** button only removes the local PEM and runtime/vault Key
 
 ## Panels
 
-1. **Markets** — scan sorts highest payout multiple first; sizing uses Gemini half-Kelly on payout odds plus Nash payoff, with a plain-English odds explainer (not a guaranteed win)  
-2. **Contract** — detail + paper/live order gate  
+1. **Markets** — scan sorts highest payout multiple first; filter chips for **ESPN matched**, **ESPN live now**, **Sports games**, **GO only**; sizing uses Gemini half-Kelly on payout odds plus Nash payoff, with a plain-English odds explainer (not a guaranteed win)  
+2. **Bet** — contract detail, big YES/NO buttons, required max price, cost preview, half-Kelly size button, paper/live order gate  
 3. **Nash / Kelly** — payoff matrix + Monte Carlo simulation  
 4. **Account** — balance / positions / orders (keys required)  
 5. **Settings** — Allow live trading, app lock password, key on this phone, then **ARM LIVE**  
@@ -111,9 +131,10 @@ The **Clear local keys** button only removes the local PEM and runtime/vault Key
 ## Auth signing (Kalshi v2)
 
 ```
-timestamp_ms + METHOD + path_without_query + optional_body
-→ RSA-PSS SHA-256 (salt = DIGEST_LENGTH) → base64
-Headers: KALSHI-ACCESS-KEY / -SIGNATURE / -TIMESTAMP
+pre-sign text = timestamp_ms + METHOD + path_without_query      (the JSON body is NOT signed)
+Ed25519 key → Ed25519 signature
+RSA key     → RSA-PSS SHA-256, MGF1 SHA-256, salt = DIGEST_LENGTH
+→ base64. Headers: KALSHI-ACCESS-KEY / -SIGNATURE / -TIMESTAMP
 ```
 
 ## License

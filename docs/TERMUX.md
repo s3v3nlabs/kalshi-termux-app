@@ -47,7 +47,7 @@ Install `python-cryptography` from `pkg` and remove any pip-installed `cryptogra
 pkg install -y python-cryptography
 pip install --user -r requirements.txt
 pip uninstall -y cryptography
-PYTHONPATH=. python -m uvicorn app.main:app --host 0.0.0.0 --port 8787
+PYTHONPATH=. python -m uvicorn app.main:app --host 127.0.0.1 --port 8787
 ```
 
 If `GET /` returns 500 with `TypeError: unhashable type: 'dict'`, update `app/main.py` or `git pull` so `TemplateResponse` passes `request` first (Starlette 1.x).

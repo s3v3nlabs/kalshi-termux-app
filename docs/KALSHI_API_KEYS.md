@@ -1,6 +1,6 @@
 # Kalshi API keys
 
-This app uses Kalshi API-key authentication for Account endpoints and live trading. A key consists of a **Key ID** and a private RSA PEM. Public market scanning does not need a key.
+This app uses Kalshi API-key authentication for Account endpoints and live trading. A key consists of a **Key ID** and a private key PEM. Kalshi creates **Ed25519** keys by default; **RSA** keys also work. The app detects the type from the key itself. Public market scanning does not need a key.
 
 ## Create a key
 

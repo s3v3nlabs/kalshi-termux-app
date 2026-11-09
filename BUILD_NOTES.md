@@ -58,12 +58,24 @@ Rows expose `prob_source` and `model_p_source` (`espn_live` | `espn_pre` | `mark
 
 `POST /trade-api/v2/portfolio/orders` now returns HTTP 410 `deprecated_v1_order_endpoint`. Live placement uses `POST /trade-api/v2/portfolio/events/orders`. The app still thinks in buy YES/NO plus integer cents; the HTTP client maps that onto V2 `bid`/`ask` and a fixed-point YES price. Listing orders stays on `GET /trade-api/v2/portfolio/orders`. Paper bets do not call create-order.
 
+### Rebuild hardening (Nov 2026, docs rechecked against OpenAPI 3.36.0)
+
+- Folded PR #9 (V2 create-order) and PR #8 (tzdata) onto main.
+- **Signing fix:** Kalshi's pre-sign text is `timestamp + METHOD + path` with no body. The old client appended the JSON body, which breaks signed POSTs. Fixed, plus Ed25519 support (Kalshi's default key type); key type is detected from the parsed key, not the PEM header.
+- Max price is required; the implicit 99¢/1¢ IOC "market" order was removed. `type` must be `limit`, `ioc`, or `fok` (`market` is an alias for `ioc`, still needs a price).
+- V2 passthrough bodies are validated: required fields, enums for `side` / `time_in_force` / `self_trade_prevention_type`, whole-cent price strings, whole-contract counts, `reduce_only` needs IOC, `expiration_time` needs GTC, unknown keys rejected.
+- `KalshiAPIError` keeps status + Kalshi `code`/`message`; `friendly_order_error` maps them for the UI.
+- Fixed-point reads: balance prefers `balance_dollars`; positions summarize `position_fp` / `market_exposure_dollars`; orders list reads `outcome_side`, `yes_price_dollars` / `no_price_dollars`, `fill_count_fp`, `remaining_count_fp`. Market scan already used `*_dollars` and `volume_fp` / `open_interest_fp` (integer cent fields were removed in the March 2026 migration).
+- Nov 5 2026 fixed-point changes affect Perps / Clearing Member (`_fp` 6-decimal dollars) and fractional contracts on margin markets; event-market create-order is unchanged. This app sends whole cents / whole contracts, which are valid on every price grid.
+- Default bind is now `127.0.0.1`.
+
 ## Remaining gaps
 
 1. **Authenticated endpoints need Operator keys** (`KALSHI_KEY_ID` + `secrets/kalshi.key`). Without them: public scan/status work; balance/positions/live orders do not.
 2. WebSocket orderbook listener is **not** wired into the UI (Termux-hostile); REST poll + short TTL cache used instead. WS URL constants remain in config for a future toggle.
 3. Model probability uses an ESPN full-game match when team and date line up. Otherwise it stays a **conservative shrink-to-0.5** (`market_shrink`). No LLM dependency. Pregame spreads are a rough map, not a promise.
-4. Demo host (`demo-api.kalshi.co`) not smoke-tested in this build environment.
+4. Demo host (`demo-api.kalshi.co`) not smoke-tested in this build environment. Kalshi now lists `external-api.demo.kalshi.co` as the primary demo host; `demo-api.kalshi.co` is still documented as supported.
+6. Live create-order has only been tested against mocked HTTP. First real use: start with 1 contract at a low max price and check Orders.
 5. Do not push secrets; coordinator handles GitHub publish.
 
 ## Smoke checklist

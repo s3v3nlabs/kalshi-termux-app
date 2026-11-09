@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -14,7 +14,13 @@ from pydantic import BaseModel, Field
 from app import __version__
 from app.config import HOSTS, settings
 from app.db.store import Store
-from app.kalshi.client import KalshiClient
+from app.kalshi.client import (
+    MAX_CONTRACTS_PER_ORDER,
+    KalshiClient,
+    detect_key_type,
+    friendly_order_error,
+    summarize_positions,
+)
 from app.security.mfa import TOTPManager
 from app.security.vault import Vault
 from app.strategy.kelly import kelly_size
@@ -67,6 +73,35 @@ async def index(request: Request):
             "dry_run": settings.dry_run,
         },
     )
+
+
+# ---------- installable web app (PWA) ----------
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return FileResponse(ROOT / "static" / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from / so its scope covers the whole app.
+    return FileResponse(
+        ROOT / "static" / "js" / "sw.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
+def _balance_dollars(data: dict) -> Any:
+    """Prefer Kalshi's fixed-point balance_dollars; fall back to integer cents."""
+    fp = data.get("balance_dollars")
+    if fp not in (None, ""):
+        try:
+            return round(float(fp), 6)
+        except (TypeError, ValueError):
+            pass
+    bal = data.get("balance", 0)
+    return bal / 100.0 if isinstance(bal, (int, float)) else bal
 
 
 # ---------- health / status ----------
@@ -236,13 +271,19 @@ def api_balance():
         return {"ok": False, "error": "Keys not configured", "authenticated": False}
     try:
         data = client.get_balance()
-        bal = data.get("balance", 0)
-        # Kalshi returns cents
-        dollars = bal / 100.0 if isinstance(bal, (int, float)) else bal
+        dollars = _balance_dollars(data)
+        portfolio = data.get("portfolio_value")
+        portfolio_dollars = portfolio / 100.0 if isinstance(portfolio, (int, float)) else None
         store.log_activity("account", f"Balance fetched: ${dollars}")
-        return {"ok": True, "raw": data, "balance_dollars": dollars, "host": client.host}
+        return {
+            "ok": True,
+            "raw": data,
+            "balance_dollars": dollars,
+            "portfolio_value_dollars": portfolio_dollars,
+            "host": client.host,
+        }
     except Exception as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, friendly_order_error(e)["error"])
 
 
 @app.get("/api/account/positions")
@@ -250,9 +291,10 @@ def api_positions():
     if not settings.has_keys:
         return {"ok": False, "error": "Keys not configured", "authenticated": False}
     try:
-        return {"ok": True, "data": client.get_positions(), "host": client.host}
+        data = client.get_positions()
+        return {"ok": True, "data": data, "summary": summarize_positions(data), "host": client.host}
     except Exception as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, friendly_order_error(e)["error"])
 
 
 @app.get("/api/account/orders")
@@ -262,7 +304,7 @@ def api_acct_orders(status: Optional[str] = None):
     try:
         return {"ok": True, "data": client.get_orders(status=status), "host": client.host}
     except Exception as e:
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, friendly_order_error(e)["error"])
 
 
 # ---------- trading ----------
@@ -275,8 +317,10 @@ class ArmBody(BaseModel):
 class OrderBody(BaseModel):
     ticker: str
     side: str
-    count: int = Field(..., ge=1, le=10000)
+    count: int = Field(..., ge=1, le=MAX_CONTRACTS_PER_ORDER)
+    # Max price in whole cents. Required: the gate refuses orders without one.
     price_cents: Optional[int] = None
+    order_type: str = "limit"
     coherence: Optional[float] = None
     confirm_live: Optional[str] = None
 
@@ -306,7 +350,7 @@ def trading_order(body: OrderBody):
         if body.confirm_live != "PLACE LIVE ORDER":
             raise HTTPException(
                 400,
-                'Live mode requires confirm_live="PLACE LIVE ORDER"',
+                "Real orders are armed. Confirm the real bet on screen before it is sent.",
             )
     result = orders.place(
         ticker=body.ticker.strip(),
@@ -314,6 +358,7 @@ def trading_order(body: OrderBody):
         count=body.count,
         price_cents=body.price_cents,
         coherence=body.coherence,
+        order_type=body.order_type,
     )
     return result
 
@@ -399,10 +444,13 @@ def settings_keys(body: KeysBody):
         raise HTTPException(400, "Key ID is required")
     if not any(header in pem for header in ("BEGIN RSA PRIVATE KEY", "BEGIN PRIVATE KEY")):
         raise HTTPException(400, "PEM must contain an RSA PRIVATE KEY or PRIVATE KEY header")
+    key_type = detect_key_type(pem)
+    if key_type is None:
+        raise HTTPException(400, "That private key could not be read. Kalshi keys are RSA or Ed25519.")
     path = vault.store_api_credentials(key_id, pem)
     _refresh_client()
     store.log_activity("security", "API credentials stored (encrypted id + chmod 600 PEM)")
-    return {"ok": True, "key_path": str(path), "has_keys": settings.has_keys}
+    return {"ok": True, "key_path": str(path), "has_keys": settings.has_keys, "key_type": key_type}
 
 
 @app.post("/api/settings/keys/clear")

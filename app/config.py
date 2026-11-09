@@ -71,7 +71,7 @@ class Settings:
     max_contract_price_cents: float = _float(os.getenv("MAX_CONTRACT_PRICE_CENTS"), 40.0)
     min_payout_multiple: float = _float(os.getenv("MIN_PAYOUT_MULTIPLE"), 2.0)
 
-    bind_host: str = os.getenv("HOST", "0.0.0.0")
+    bind_host: str = os.getenv("HOST", "127.0.0.1")
     bind_port: int = _int(os.getenv("PORT"), 8787)
 
     @property

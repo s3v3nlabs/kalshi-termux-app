@@ -48,16 +48,29 @@ def test_no_limit_maps_to_yes_book_ask():
     assert body["time_in_force"] == "good_till_canceled"
 
 
-def test_blank_price_is_market_style_ioc():
-    yes = to_create_order_v2(_legacy(type="market", yes_price=None))
-    assert yes["side"] == "bid"
-    assert yes["price"] == "0.9900"
-    assert yes["time_in_force"] == "immediate_or_cancel"
+def test_blank_price_is_rejected_not_defaulted_to_99c():
+    with pytest.raises(ValueError, match="max price"):
+        to_create_order_v2(_legacy(type="market", yes_price=None))
+    with pytest.raises(ValueError, match="max price"):
+        to_create_order_v2(_legacy(side="no", yes_price=None))
 
-    no = to_create_order_v2(_legacy(side="no", type="market", yes_price=None))
-    assert no["side"] == "ask"
-    assert no["price"] == "0.0100"
-    assert no["time_in_force"] == "immediate_or_cancel"
+
+def test_ioc_and_fok_need_price_and_map_time_in_force():
+    ioc = to_create_order_v2(_legacy(type="ioc"))
+    assert ioc["time_in_force"] == "immediate_or_cancel"
+    assert ioc["price"] == "0.2200"
+    legacy_market = to_create_order_v2(_legacy(type="market"))
+    assert legacy_market["time_in_force"] == "immediate_or_cancel"
+    fok = to_create_order_v2(_legacy(side="no", yes_price=None, no_price=40, type="fok"))
+    assert fok == {
+        "ticker": "KXNHLGAME-TEST",
+        "client_order_id": "cid-1",
+        "side": "ask",
+        "count": "1.00",
+        "price": "0.6000",
+        "time_in_force": "fill_or_kill",
+        "self_trade_prevention_type": "taker_at_cross",
+    }
 
 
 def test_rejects_price_outside_cents():
