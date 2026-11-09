@@ -345,8 +345,10 @@ function scanRowHtml(m) {
       <span data-label="Edge" class="edge ${edgeCls}">${e == null ? "—" : (e > 0 ? "+" : "") + e.toFixed(1) + "pp"}</span>
       <span data-label="Kelly $">${stake}</span>
       <span data-label="Geo">${geoCell}</span>
-      <span class="c-buy"><button type="button" class="btn small buy-btn" data-ticker="${escapeHtml(m.ticker || "")}"
-        ${g.allowed ? "" : `disabled title="${escapeHtml(g.reason || "Blocked")}" aria-disabled="true"`}>Buy</button></span>
+      <span class="c-buy" ${g.allowed ? "" : `title="${escapeHtml(g.reason || "Blocked")}"`}><button type="button" class="btn small buy-btn"
+        data-ticker="${escapeHtml(m.ticker || "")}" ${
+          g.allowed ? "" : `disabled title="${escapeHtml(g.reason || "Blocked")}" aria-label="Buy blocked: ${escapeHtml(g.reason || "Blocked")}"`
+        }>Buy</button></span>
     </div>
     ${m.ticker === expandedTicker ? featureBreakdown(m) : ""}`;
 }
@@ -527,7 +529,21 @@ function panelVisible(name) {
 // Poll every 5 s while the scanner is on screen (server caches for CACHE_TTL_SECONDS).
 setInterval(() => panelVisible("scanner") && runScan(false, true), 5000);
 
+/* ---------- Geo gate on the Bet panel (operator console, screen 5) ---------- */
+let contractGeo = null;
+function applyContractGeo() {
+  const btn = $("#btn-paper");
+  const note = $("#order-geo-note");
+  const blocked = contractGeo && contractGeo.allowed === false;
+  btn.disabled = Boolean(blocked);
+  btn.title = blocked ? contractGeo.reason || "Blocked in your state" : "";
+  note.textContent = blocked ? "⛔ " + (contractGeo.reason || "Blocked in your state") : "";
+  note.classList.toggle("hidden", !blocked);
+}
+
 function openContract(ticker, preview) {
+  contractGeo = (preview && preview.geo) || null;
+  applyContractGeo();
   $("#contract-ticker").value = ticker;
   showPanel("contract");
   if (preview) {
@@ -543,6 +559,8 @@ async function loadContract() {
   $("#contract-body").textContent = "Loading…";
   try {
     const data = await api("/api/markets/" + encodeURIComponent(ticker));
+    contractGeo = data.geo || null;
+    applyContractGeo();
     paintContract(data);
     // Prefill nash board
     const e = data.enriched;
@@ -963,6 +981,7 @@ async function submitOrder() {
     toast(e.message);
   } finally {
     btn.disabled = false;
+    applyContractGeo();
   }
 }
 

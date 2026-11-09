@@ -421,3 +421,10 @@ body.live-armed::after {
 }
 /* the sticky scanner header must sit below the strip */
 .scan-head { top: var(--strip-h, 54px); }
+
+/* ---------- Operator console: geo gate ---------- */
+.scan-row.is-blocked .scan-main > span:not(.c-buy):not([data-label="Geo"]) { opacity: 0.38; }
+.scan-row.is-blocked { background: rgba(248, 113, 113, 0.04); }
+.buy-btn:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(1); }
+.c-buy[title] { cursor: not-allowed; }
+.geo-note { color: var(--red); font-weight: 600; margin: 8px 0; }
