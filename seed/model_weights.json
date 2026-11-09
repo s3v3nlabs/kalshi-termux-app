@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "weights": {
+    "w0": -0.14365993,
+    "w1": 0.92694419,
+    "w2": 0.0946753,
+    "w3": -0.02554703,
+    "w4": 0.09801986,
+    "w5": -0.01199447,
+    "w6": 0.1,
+    "w7": 0.1,
+    "w8": 0.1
+  },
+  "last_refit": "2026-11-09T06:01:29.876952+00:00",
+  "refit_log": [
+    {
+      "ts": "2026-11-09T06:01:29.876952+00:00",
+      "kind": "settled_train",
+      "n_rows": 871,
+      "n_markets": 397,
+      "n_train": 692,
+      "n_holdout": 179,
+      "n_holdout_markets": 79,
+      "sources": {
+        "settled_market": 871,
+        "settled_bet": 0
+      },
+      "holdout_from": "2026-11-06T05:15:25+00:00",
+      "epochs": 2000,
+      "promoted": true,
+      "train_brier_current": 0.30854,
+      "train_brier_proposed": 0.163228,
+      "holdout_brier_current": 0.292406,
+      "holdout_brier_proposed": 0.133728,
+      "holdout_brier_market": 0.137477,
+      "holdout_hit_current": 0.6089,
+      "holdout_hit_proposed": 0.8101,
+      "holdout_pnl_current": -3866.33,
+      "holdout_pnl_proposed": 226.89,
+      "gate_pass": true,
+      "weights_proposed": {
+        "w0": -0.14365993,
+        "w1": 0.92694419,
+        "w2": 0.0946753,
+        "w3": -0.02554703,
+        "w4": 0.09801986,
+        "w5": -0.01199447
+      },
+      "version": 1,
+      "reason": "Holdout Brier improved; promoted."
+    }
+  ],
+  "last_training": {
+    "ts": "2026-11-09T06:12:01.941718+00:00",
+    "kind": "settled_train",
+    "n_rows": 871,
+    "n_markets": 397,
+    "n_train": 692,
+    "n_holdout": 179,
+    "n_holdout_markets": 79,
+    "sources": {
+      "settled_market": 871,
+      "settled_bet": 0
+    },
+    "holdout_from": "2026-11-06T05:15:25+00:00",
+    "epochs": 2000,
+    "promoted": false,
+    "train_brier_current": 0.162778,
+    "train_brier_proposed": 0.160651,
+    "holdout_brier_current": 0.138662,
+    "holdout_brier_proposed": 0.138734,
+    "holdout_brier_market": 0.137477,
+    "holdout_hit_current": 0.8101,
+    "holdout_hit_proposed": 0.8101,
+    "holdout_pnl_current": -300.95,
+    "holdout_pnl_proposed": -335.93,
+    "gate_pass": false,
+    "weights_current": {
+      "w0": -0.14365993,
+      "w1": 0.92694419,
+      "w2": 0.0946753,
+      "w3": -0.02554703,
+      "w4": 0.09801986,
+      "w5": -0.01199447,
+      "w6": 0.1,
+      "w7": 0.1,
+      "w8": 0.1
+    },
+    "weights_proposed": {
+      "w0": -0.30448011,
+      "w1": 0.93633129,
+      "w2": 0.08867986,
+      "w3": -0.18945228,
+      "w4": 0.09607893,
+      "w5": -0.02090091,
+      "w6": 0.19894654,
+      "w7": 0.09801986,
+      "w8": 0.09801986
+    },
+    "reason": "Holdout Brier did not improve. Kept current weights."
+  }
+}

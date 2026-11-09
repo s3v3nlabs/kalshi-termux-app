@@ -58,4 +58,11 @@ open_when_ready() {
 open_when_ready &
 
 # Prefer asyncio loop on Android/Termux (uvloop from uvicorn[standard] can fail there)
+# Seed trained model weights on first run (public settled-market training).
+mkdir -p data
+if [ ! -f data/model_weights.json ] && [ -f seed/model_weights.json ]; then
+  cp seed/model_weights.json data/model_weights.json
+  echo "[*] Seeded trained model weights (v1)"
+fi
+
 exec python3 -m uvicorn app.main:app --host "$HOST" --port "$PORT" --loop asyncio --log-level info
