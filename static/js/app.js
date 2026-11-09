@@ -954,6 +954,63 @@ async function runBacktest() {
   }
 }
 $("#btn-backtest").addEventListener("click", runBacktest);
+
+/* ---------- settled-market training (folded into Backtest + Calibration) ---------- */
+
+function trainLine(t) {
+  const lt = t.last_training;
+  if (!lt) return "No settled-market refit yet.";
+  const b = (v) => (v == null ? "—" : Number(v).toFixed(4));
+  return `Last refit ${fmtTs(lt.ts)} · ${lt.n_markets} markets (${lt.n_train} train / ${lt.n_holdout} holdout rows) · holdout Brier ${b(
+    lt.holdout_brier_current
+  )} → ${b(lt.holdout_brier_proposed)} (book ${b(lt.holdout_brier_market)}) · gate ${lt.gate_pass ? "PASS" : "FAIL"} · ${
+    lt.promoted ? "promoted v" + lt.version : "not promoted"
+  }`;
+}
+
+function paintTraining(t) {
+  const s = t.settled || {};
+  const lt = t.last_training || {};
+  const c = t.calibration || {};
+  $("#train-metrics").innerHTML = `
+    <div><small>Settled markets</small><b>${s.markets ?? 0}</b></div>
+    <div><small>Snapshots</small><b>${s.snapshots ?? 0}</b></div>
+    <div><small>Holdout Brier</small><b class="${lt.promoted ? "better" : ""}">${
+      lt.holdout_brier_proposed == null ? "—" : Number(lt.holdout_brier_proposed).toFixed(4)
+    }</b></div>
+    <div><small>Gems</small><b class="${t.gems_verified ? "pos" : "neg"}">${t.gems_verified ? "verified" : "◆ GEM? unverified"}</b></div>`;
+  $("#train-meta").textContent = `${trainLine(t)} · ${lt.reason || ""} · model v${t.model_version} · ${t.model_runs} model_runs · calibration n ${
+    c.n ?? 0
+  }/${c.min_n ?? "—"}`;
+  const cl = $("#calib-train");
+  if (cl) cl.textContent = `Training: ${s.markets ?? 0} settled markets · ${trainLine(t)}. Calibration (settled bets) still decides ◆ GEM vs ◆ GEM?.`;
+}
+
+async function refreshTraining() {
+  try {
+    paintTraining(await api("/api/training"));
+  } catch (e) {
+    $("#train-meta").textContent = "Error: " + e.message;
+  }
+}
+
+async function trainAction(path, body, label) {
+  $("#train-meta").textContent = label;
+  try {
+    const r = await api(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+    paintTraining(r.status);
+    const rec = r.record || {};
+    toast(rec.promoted ? `Promoted v${rec.version}: holdout Brier ${rec.holdout_brier_current} → ${rec.holdout_brier_proposed}` : `Not promoted: ${rec.reason || "no record"}`);
+  } catch (e) {
+    $("#train-meta").textContent = "Error: " + e.message;
+  }
+}
+$("#btn-train-refit").addEventListener("click", () => trainAction("/api/training/refit", null, "Refitting…"));
+$("#btn-train-ingest").addEventListener("click", () => {
+  if (!confirm("Pull up to 100 settled markets from the last 7 days (public API, ~2–3 min) and refit?")) return;
+  trainAction("/api/training/ingest", { days: 7, per_day: 15, max_markets: 100, refit: true }, "Pulling settled markets… this takes a few minutes.");
+});
+$$('#nav button[data-panel="backtest"], #nav button[data-panel="calibration"]').forEach((b) => b.addEventListener("click", refreshTraining));
 $("#btn-promote").addEventListener("click", async () => {
   if (!lastBacktest || !confirm("Write the proposed weights? The scanner uses them from the next scan.")) return;
   try {

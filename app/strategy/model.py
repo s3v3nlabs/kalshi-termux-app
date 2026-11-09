@@ -86,14 +86,36 @@ def build_features(
     }
 
 
+START_WEIGHT = 0.1
+# Weights that must exist in a weights file for it to be used at all; terms
+# added later (w6+) default to START_WEIGHT when an older file lacks them.
+CORE_WEIGHT_KEYS = ("w0", "w1", "w2", "w3", "w4", "w5")
+
+
+def _fill_weights(data: dict) -> dict:
+    w = data.setdefault("weights", {})
+    for k in WEIGHT_KEYS:
+        w.setdefault(k, START_WEIGHT)
+    return data
+
+
 def load_model(path: Optional[Path] = None) -> dict:
     for candidate in ([path] if path else [runtime_weights_path(), DEFAULT_WEIGHTS_PATH]):
         if candidate and Path(candidate).is_file():
             data = json.loads(Path(candidate).read_text(encoding="utf-8"))
             w = data.get("weights") or {}
-            if all(k in w for k in WEIGHT_KEYS):
-                return data
-    return json.loads(DEFAULT_WEIGHTS_PATH.read_text(encoding="utf-8"))
+            if all(k in w for k in CORE_WEIGHT_KEYS):
+                return _fill_weights(data)
+    return _fill_weights(json.loads(DEFAULT_WEIGHTS_PATH.read_text(encoding="utf-8")))
+
+
+def feature_value(features: dict, name: str) -> float:
+    """Missing or null features (e.g. ESPN on historical rows) contribute 0."""
+    v = features.get(name)
+    try:
+        return 0.0 if v is None else float(v)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def save_model(model: dict, path: Optional[Path] = None) -> Path:
@@ -108,7 +130,7 @@ def score(features: dict, weights: Optional[dict] = None) -> float:
     w = weights or load_model()["weights"]
     z = float(w["w0"])
     for i, name in enumerate(FEATURES, start=1):
-        z += float(w[f"w{i}"]) * float(features.get(name, 0.0))
+        z += float(w.get(f"w{i}", START_WEIGHT)) * feature_value(features, name)
     return z
 
 
@@ -134,7 +156,7 @@ def fit(
     l2: float = L2,
 ) -> dict:
     """Full-batch gradient descent on mean log-loss + L2 (bias not penalized)."""
-    w = {k: float(weights[k]) for k in WEIGHT_KEYS}
+    w = {k: float(weights.get(k, START_WEIGHT)) for k in WEIGHT_KEYS}
     n = len(samples)
     if n == 0:
         return w
@@ -144,7 +166,7 @@ def fit(
             err = sigmoid(score(x, w)) - y
             grad["w0"] += err
             for i, name in enumerate(FEATURES, start=1):
-                grad[f"w{i}"] += err * float(x.get(name, 0.0))
+                grad[f"w{i}"] += err * feature_value(x, name)
         for k in WEIGHT_KEYS:
             g = grad[k] / n
             if k != "w0":
@@ -163,7 +185,7 @@ def training_samples(ledger) -> list[tuple[dict, int]]:
         run = ledger.latest_model_run_sync(bet["ticker"], before_ts=bet["ts"]) or ledger.latest_model_run_sync(bet["ticker"])
         if not run:
             continue
-        feats = {k: float(run["features"].get(k, 0.0) or 0.0) for k in FEATURES}
+        feats = {k: feature_value(run["features"], k) for k in FEATURES}
         yes_won = bet["outcome"] if bet["side"] == "yes" else 1 - bet["outcome"]
         samples.append((feats, int(yes_won)))
     return samples

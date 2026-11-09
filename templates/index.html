@@ -125,6 +125,7 @@
         <div class="calib-banner hidden" id="calib-banner" role="alert"></div>
         <div class="big-stat"><span class="big-number" id="calib-brier">—</span><span class="muted">Brier score (lower is better · 0.25 = coin flip)</span></div>
         <p class="muted" id="calib-meta">Loading…</p>
+        <p class="muted mono" id="calib-train">—</p>
         <svg id="calib-svg" class="calib-svg" viewBox="0 0 340 260" role="img" aria-label="Reliability curve"></svg>
         <div class="legend"><span class="lg pred">● predicted</span><span class="lg act">● actual</span><span class="lg diag">— perfect</span></div>
         <div id="calib-table" class="calib-table"></div>
@@ -168,6 +169,16 @@
         <p class="muted" id="bt-meta">Not run yet.</p>
       </div>
       <div class="bt-grid" id="bt-grid"></div>
+      <div class="card" id="train-card">
+        <h2>Settled-market training</h2>
+        <p class="muted">Refits on Kalshi's resolved markets (public data, pre-close book rebuilt from hourly candles) plus your settled bets. Holdout = the most recent 20% of markets by close time. New weights are promoted only when holdout Brier improves. Gems stay ◆ GEM? until settled bets pass calibration.</p>
+        <div class="bt-metrics" id="train-metrics"></div>
+        <p class="muted mono" id="train-meta">Loading…</p>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" id="btn-train-refit" type="button">Refit on settled</button>
+          <button class="btn ghost" id="btn-train-ingest" type="button">Pull 7 days + refit</button>
+        </div>
+      </div>
     </section>
 
     <!-- CONTRACT -->

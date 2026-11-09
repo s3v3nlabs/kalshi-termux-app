@@ -65,7 +65,7 @@ def run_backtest(rows: list[dict], weights: dict) -> dict:
     bets = wins = 0
     curve = []
     for r in rows:
-        feats = {k: float(r["features"].get(k, 0.0) or 0.0) for k in M.FEATURES}
+        feats = {k: M.feature_value(r["features"], k) for k in M.FEATURES}
         p = M.predict(feats, weights)
         y = int(r["yes_outcome"])
         pairs.append((p, y))
@@ -117,7 +117,7 @@ def gate(candidate_brier: Optional[float], baseline_brier: Optional[float]) -> b
 
 
 def propose_weights(rows: list[dict], weights: dict) -> dict:
-    samples = [({k: float(r["features"].get(k, 0.0) or 0.0) for k in M.FEATURES}, int(r["yes_outcome"])) for r in rows]
+    samples = [({k: M.feature_value(r["features"], k) for k in M.FEATURES}, int(r["yes_outcome"])) for r in rows]
     return M.fit(samples, weights)
 
 

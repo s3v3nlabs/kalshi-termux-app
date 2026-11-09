@@ -592,8 +592,14 @@ class KalshiClient:
         series_ticker: Optional[str] = None,
         ticker: Optional[str] = None,
         mve_filter: Optional[str] = "exclude",
+        min_close_ts: Optional[int] = None,
+        max_close_ts: Optional[int] = None,
     ) -> dict:
         params: dict[str, Any] = {"limit": limit}
+        if min_close_ts is not None:
+            params["min_close_ts"] = int(min_close_ts)
+        if max_close_ts is not None:
+            params["max_close_ts"] = int(max_close_ts)
         if status:
             params["status"] = status
         if cursor:
@@ -633,6 +639,16 @@ class KalshiClient:
         if cursor:
             params["cursor"] = cursor
         return self.public_get("/trade-api/v2/events", params=params)
+
+    def get_candlesticks(self, series_ticker: str, ticker: str, start_ts: int, end_ts: int, period_interval: int = 60) -> dict:
+        """Public OHLC candles (yes_bid / yes_ask / volume / open interest per period)."""
+        return self.public_get(
+            f"/trade-api/v2/series/{series_ticker}/markets/{ticker}/candlesticks",
+            params={"start_ts": int(start_ts), "end_ts": int(end_ts), "period_interval": int(period_interval)},
+        )
+
+    def get_series(self, series_ticker: str) -> dict:
+        return self.public_get(f"/trade-api/v2/series/{series_ticker}")
 
     def get_market(self, ticker: str) -> dict:
         return self.public_get(f"/trade-api/v2/markets/{ticker}")

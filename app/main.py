@@ -172,6 +172,11 @@ def _apply_geo(result: dict, state: Optional[str]) -> dict:
     return out
 
 
+# Latest scan's model-run rows by ticker, so a bet can snapshot its inputs
+# without a network call (see trading_order).
+_LAST_SCAN_RUNS: dict[str, dict] = {}
+
+
 @app.get("/api/markets/scan")
 def api_scan(
     request: Request,
@@ -199,8 +204,12 @@ def api_scan(
         store.log_activity("error", f"Scan failed: {e}")
         raise HTTPException(502, str(e))
     result["from_cache"] = False
+    run_rows = model_run_rows(result.get("markets") or [])
+    _LAST_SCAN_RUNS.clear()
+    _LAST_SCAN_RUNS.update({r["ticker"]: r for r in run_rows})
     try:
-        result["model_runs_written"] = ledger.add_model_runs_sync(model_run_rows(result.get("markets") or []))
+        # Training snapshots, not a poll log: at most one row per ticker per hour.
+        result["model_runs_written"] = ledger.add_model_snapshots_sync(run_rows)
     except Exception as e:
         store.log_activity("error", f"Could not write model runs: {e}")
     store.cache_set(cache_key, result, ttl=settings.cache_ttl)
@@ -412,6 +421,47 @@ def backtest_promote():
     return {"ok": True, "path": str(path.relative_to(ROOT)), **record}
 
 
+# ---------- settled-market training (phase 1) ----------
+
+@app.get("/api/training")
+def api_training_status():
+    """Settled sample size, last refit/gate result, and whether gems are verified."""
+    from app.strategy.training import training_status
+
+    return training_status(ledger)
+
+
+@app.post("/api/training/refit")
+def api_training_refit():
+    """Refit on stored settled markets + settled bets; chronological holdout gate."""
+    from app.strategy.training import train_and_gate, training_status
+
+    record = train_and_gate(ledger, store=store)
+    return {"ok": True, "record": record, "status": training_status(ledger)}
+
+
+class IngestBody(BaseModel):
+    days: int = Field(7, ge=1, le=60)
+    per_day: int = Field(15, ge=1, le=50)
+    max_markets: int = Field(100, ge=1, le=200)
+    refit: bool = True
+
+
+@app.post("/api/training/ingest")
+def api_training_ingest(body: IngestBody):
+    """Pull settled markets from Kalshi's public API (no keys), then refit."""
+    from app.strategy.training import ingest_settled, train_and_gate, training_status
+
+    try:
+        report = ingest_settled(client, ledger, days=body.days, per_day=body.per_day, max_markets=body.max_markets)
+    except Exception as e:
+        store.log_activity("error", f"Settled ingest failed: {e}")
+        raise HTTPException(502, f"Settled ingest failed: {e}")
+    store.log_activity("model", f"Ingested {report['stored']} settled markets", {k: report[k] for k in ("listed", "eligible", "fetched", "stored")})
+    record = train_and_gate(ledger, store=store) if body.refit else None
+    return {"ok": True, "ingest": report, "record": record, "status": training_status(ledger)}
+
+
 # ---------- bets ledger ----------
 
 class SettleBody(BaseModel):
@@ -497,6 +547,12 @@ def trading_order(body: OrderBody, request: Request):
                 400,
                 "Real orders are armed. Confirm the real bet on screen before it is sent.",
             )
+    snap = _LAST_SCAN_RUNS.get(body.ticker.strip())
+    if snap is not None:
+        try:  # a bet always gets a training snapshot (bypasses the hourly throttle)
+            ledger.add_model_runs_sync([{**snap, "kind": "bet"}])
+        except Exception as e:
+            store.log_activity("error", f"Could not snapshot model run for bet: {e}")
     result = orders.place(
         ticker=body.ticker.strip(),
         side=body.side,
