@@ -341,8 +341,20 @@ def enrich_market(
         espn_hint=espn_hint,
     )
 
+    model_features = {
+        "yes_ask": round(yes_ask, 4),
+        "no_ask": round(no_ask, 4),
+        "volume": vol,
+        "open_interest": oi,
+        "spread_cents": round(spread_cents, 2),
+        "close_time": m.get("close_time"),
+        "prob_source": prob_source,
+        "espn_p_yes": model_p_yes,
+    }
+
     return {
         "ticker": ticker,
+        "model_features": model_features,
         "title": m.get("title") or m.get("subtitle") or m.get("yes_sub_title") or ticker,
         "event_ticker": m.get("event_ticker"),
         "yes_ask": round(yes_ask, 4),
@@ -423,6 +435,16 @@ def _merge_nearby_game_markets(client: KalshiClient, markets: list[dict]) -> lis
         seen.add(ticker)
         merged.append(market)
     return merged
+
+
+def model_run_rows(rows: list[dict]) -> list[dict]:
+    """One model_runs row per enriched market: model P(YES) + its inputs."""
+    out = []
+    for row in rows:
+        p = (row.get("nash") or {}).get("model_prob_yes")
+        if row.get("ticker") and p is not None:
+            out.append({"ticker": row["ticker"], "model_prob": float(p), "features": row.get("model_features") or {}})
+    return out
 
 
 def scan_opportunities(

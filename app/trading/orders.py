@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Optional
 
 from app.config import settings
+from app.db.ledger import Ledger
 from app.db.store import Store
 from app.kalshi.client import ORDER_TYPES, KalshiClient, friendly_order_error, to_create_order_v2
 
@@ -13,10 +14,33 @@ LIVE_CONFIRM_PHRASE = "ARM LIVE"
 
 
 class OrderGate:
-    def __init__(self, store: Store, client: Optional[KalshiClient] = None):
+    def __init__(self, store: Store, client: Optional[KalshiClient] = None, ledger: Optional[Ledger] = None):
         self.store = store
         self.client = client or KalshiClient()
+        self.ledger = ledger
         self._live_armed = False
+
+    def _record_fill(self, ticker: str, side: str, contracts: float, price: float) -> Optional[int]:
+        """Write a bets row for a fill. Model prob = latest model run for the ticker."""
+        if self.ledger is None or contracts <= 0 or not 0 < price < 1:
+            return None
+        model_prob = None
+        try:
+            run = self.ledger.latest_model_run_sync(ticker)
+            if run is not None:
+                p_yes = float(run["model_prob"])
+                model_prob = p_yes if side == "yes" else 1.0 - p_yes
+            return self.ledger.add_bet_sync(
+                ticker=ticker,
+                side=side,
+                price=price,
+                stake=round(contracts * price, 6),
+                model_prob=model_prob,
+                market_prob=price,
+            )
+        except Exception as exc:  # ledger trouble must never block an order result
+            self.store.log_activity("error", f"Could not record bet: {exc}")
+            return None
 
     @property
     def dry_run(self) -> bool:
@@ -137,6 +161,9 @@ class OrderGate:
                 payload=v2_body,
                 response={"note": "Order NOT sent to Kalshi"},
             )
+            # Paper bets are recorded as filled at the max price so the model
+            # can be calibrated without spending money (see BUILD_NOTES).
+            bet_id = self._record_fill(ticker, side, float(count), price)
             msg = (
                 f"Paper bet: would BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢ "
                 f"(max ${cost:.2f}). Not sent to Kalshi."
@@ -149,6 +176,7 @@ class OrderGate:
                 "message": msg,
                 "payload": payload,
                 "v2_request": v2_body,
+                "bet_id": bet_id,
             }
 
         # LIVE
@@ -185,6 +213,22 @@ class OrderGate:
             payload=v2_body,
             response=resp,
         )
+        bet_id = None
+        try:
+            filled_n = float(filled or 0)
+        except (TypeError, ValueError):
+            filled_n = 0.0
+        if filled_n > 0:
+            try:
+                fill_px = float(ack.get("average_fill_price") or 0) or None
+            except (TypeError, ValueError):
+                fill_px = None
+            if fill_px is None:
+                fill_px = price
+            elif side == "no":
+                # V2 reports the YES-book price; a NO buyer paid 1 - that.
+                fill_px = round(1.0 - fill_px, 6)
+            bet_id = self._record_fill(ticker, side, filled_n, fill_px)
         msg = f"[LIVE] Sent BUY {count}x {side.upper()} {ticker} at up to {price_cents}¢"
         if filled is not None:
             msg += f" · filled {filled}, resting {remaining}"
@@ -198,4 +242,5 @@ class OrderGate:
             "response": resp,
             "message": msg,
             "v2_request": v2_body,
+            "bet_id": bet_id,
         }

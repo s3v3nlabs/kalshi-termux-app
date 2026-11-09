@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app import __version__
 from app.config import HOSTS, settings
+from app.db.ledger import Ledger, settle_open_bets
 from app.db.store import Store
 from app.kalshi.client import (
     MAX_CONTRACTS_PER_ORDER,
@@ -26,7 +27,7 @@ from app.security.vault import Vault
 from app.strategy.kelly import kelly_size
 from app.strategy.monte_carlo import double_slit_simulation, sim_to_dict
 from app.strategy.nash import nash_decision, nash_to_dict
-from app.strategy.scanner import enrich_market, scan_opportunities
+from app.strategy.scanner import enrich_market, model_run_rows, scan_opportunities
 from app.trading.orders import OrderGate
 from app.ui_prefs import apply_saved_mode, save_dry_run_override
 
@@ -43,11 +44,12 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 store = Store()
+ledger = Ledger()
 apply_saved_mode(store)
 vault = Vault()
 totp_mgr = TOTPManager(vault)
 client = KalshiClient()
-orders = OrderGate(store, client)
+orders = OrderGate(store, client, ledger)
 
 # Session-ish flags (local process only)
 _app_unlocked = False
@@ -168,6 +170,10 @@ def api_scan(
         store.log_activity("error", f"Scan failed: {e}")
         raise HTTPException(502, str(e))
     result["from_cache"] = False
+    try:
+        result["model_runs_written"] = ledger.add_model_runs_sync(model_run_rows(result.get("markets") or []))
+    except Exception as e:
+        store.log_activity("error", f"Could not write model runs: {e}")
     store.cache_set(cache_key, result, ttl=settings.cache_ttl)
     store.log_activity(
         "scan",
@@ -305,6 +311,38 @@ def api_acct_orders(status: Optional[str] = None):
         return {"ok": True, "data": client.get_orders(status=status), "host": client.host}
     except Exception as e:
         raise HTTPException(502, friendly_order_error(e)["error"])
+
+
+# ---------- bets ledger ----------
+
+class SettleBody(BaseModel):
+    result: str  # winning side: "yes" or "no"
+
+
+@app.get("/api/bets")
+def api_bets(settled: Optional[bool] = None):
+    return {"ok": True, "bets": ledger.bets_sync(settled)}
+
+
+@app.post("/api/bets/settle")
+def api_bets_settle_auto():
+    """Settle open bets whose markets Kalshi reports as settled (public reads)."""
+    done = settle_open_bets(ledger, client)
+    if done:
+        store.log_activity("settle", f"Settled {len(done)} bet(s) from Kalshi results")
+    return {"ok": True, "settled": done}
+
+
+@app.post("/api/bets/{bet_id}/settle")
+def api_bet_settle(bet_id: int, body: SettleBody):
+    try:
+        res = ledger.settle_bet_sync(bet_id, body.result)
+    except KeyError:
+        raise HTTPException(404, "Bet not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    store.log_activity("settle", f"Bet {bet_id} settled: {body.result.upper()} won")
+    return {"ok": True, **res}
 
 
 # ---------- trading ----------

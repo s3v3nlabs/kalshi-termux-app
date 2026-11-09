@@ -93,3 +93,17 @@ Live open-market pages were dominated by multivariate `CROSSCATEGORY` combo cont
 
 **Fix:** default `mve_filter=exclude` on `GET /markets`, skip zero asks, paginate a few pages for headroom. Verified live: 100 enriched markets, many ≥2x payout singles (including extreme 1¢ tails).
 
+
+## Prediction system (Architect plan, items 1–7)
+
+Decisions below are the simplest option that meets each item; revisit if needed.
+
+### 1. Persistence (`app/db/ledger.py`, aiosqlite)
+
+- Tables `bets`, `model_runs`, `calibration` live in the existing `data/kalshi_portal.db` (gitignored). The old sync `Store` (cache/activity/orders/settings) is unchanged.
+- HTTP handlers are sync, so each async ledger method has a `*_sync` twin (`run_sync`, safe inside or outside a running loop).
+- `bets.model_prob` / `bets.price` are for the **chosen side**; `outcome` is 1 if that side won. `model_runs.model_prob` is P(YES).
+- Every non-cached scan (`/api/markets/scan`) writes one `model_runs` row per enriched market. Cache hits do not re-write.
+- "Every fill writes a bet": live acks with `fill_count > 0` write a bet (NO fill price = 1 − V2 `average_fill_price`, which is quoted on the YES book). **Paper bets are recorded as fills at the max price** so calibration can collect data without real money. `bets` has no paper/live column (spec schema); the orders log still has `dry_run`.
+- Gap: a resting live order that fills later is not picked up (no fills poller yet).
+- Settlement: `POST /api/bets/settle` checks open bets' markets via public `GET /markets/{ticker}` and settles those with `result` yes/no; `POST /api/bets/{id}/settle {"result": "yes"|"no"}` settles manually.
