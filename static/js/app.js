@@ -195,61 +195,174 @@ function payoutSort(markets) {
   });
 }
 
+/* ---------- Scanner table (operator console, screen 1) ---------- */
+const VIRTUAL_AFTER = 50; // window rows once the list is longer than this
+const OVERSCAN = 6;
+let scanRows = [];
+let scanWeights = null;
+let expandedTicker = null;
+
+function isPhone() {
+  return window.matchMedia("(max-width: 600px)").matches;
+}
+function baseRowH() {
+  return isPhone() ? 116 : 48;
+}
+function detailH() {
+  return isPhone() ? 300 : 230;
+}
+function rowH(m) {
+  return baseRowH() + (m.ticker === expandedTicker ? detailH() : 0);
+}
+function pct(p) {
+  return p == null || !Number.isFinite(Number(p)) ? "—" : (Number(p) * 100).toFixed(1) + "%";
+}
+function edgePP(m) {
+  const md = m.model || {};
+  if (md.p_yes == null || md.market_p_yes == null) return null;
+  return (Number(md.p_yes) - Number(md.market_p_yes)) * 100;
+}
+
+function featureBreakdown(m) {
+  const md = m.model || {};
+  const f = md.features || {};
+  const w = scanWeights || {};
+  const names = ["market_edge", "time_to_close", "volume_z", "espn_delta", "spread_z"];
+  let z = Number(w.w0 || 0);
+  const lines = names.map((n, i) => {
+    const wi = Number(w["w" + (i + 1)] || 0);
+    const x = Number(f[n] || 0);
+    z += wi * x;
+    return `<tr><td>${n}</td><td>${x.toFixed(3)}</td><td>${wi.toFixed(3)}</td><td>${(wi * x).toFixed(3)}</td></tr>`;
+  });
+  const p = 1 / (1 + Math.exp(-z));
+  return `<div class="feat">
+    <table class="feat-table"><thead><tr><th>input</th><th>x</th><th>w</th><th>w·x</th></tr></thead>
+    <tbody><tr><td>w0 (bias)</td><td>1</td><td>${Number(w.w0 || 0).toFixed(3)}</td><td>${Number(w.w0 || 0).toFixed(3)}</td></tr>
+    ${lines.join("")}</tbody></table>
+    <p class="mono feat-sum">z = ${z.toFixed(3)} → p = ${(p * 100).toFixed(1)}% · mispricing ${
+      m.mispricing == null ? "— (not in top 10 by volume)" : (m.mispricing * 100).toFixed(2) + "pp"
+    }${m.model_uncalibrated ? " · Kelly halved (uncalibrated)" : ""}</p>
+  </div>`;
+}
+
+function scanRowHtml(m) {
+  const e = edgePP(m);
+  const edgeCls = e == null ? "" : e > 0.05 ? "pos" : e < -0.05 ? "neg" : "flat";
+  const g = m.geo || { allowed: true };
+  const stake = m.kelly && m.kelly.allocation_usd != null ? "$" + Number(m.kelly.allocation_usd).toFixed(2) : "—";
+  const geoCell = g.allowed
+    ? `<span class="geo ok" title="${g.sports ? "Sports allowed in " + escapeHtml(g.state || "") : "Not a sports market"}">${
+        g.sports ? "OK " + escapeHtml(g.state || "") : "OK"
+      }</span>`
+    : `<span class="geo blocked" title="${escapeHtml(g.reason || "Blocked")}">BLOCKED${g.state ? " " + escapeHtml(g.state) : ""}</span>`;
+  return `
+    <div class="scan-main">
+      <span class="c-ticker" data-label="Ticker"><span class="mono">${escapeHtml(m.ticker || "")}</span><small>${escapeHtml(
+        m.title || ""
+      )}</small></span>
+      <span data-label="Mkt P">${pct(m.model && m.model.market_p_yes)}</span>
+      <span data-label="Model P">${pct(m.model && m.model.p_yes)}</span>
+      <span data-label="Nash P">${pct(m.nash_prob)}</span>
+      <span data-label="Edge" class="edge ${edgeCls}">${e == null ? "—" : (e > 0 ? "+" : "") + e.toFixed(1) + "pp"}</span>
+      <span data-label="Kelly $">${stake}</span>
+      <span data-label="Geo">${geoCell}</span>
+      <span class="c-buy"><button type="button" class="btn small buy-btn" data-ticker="${escapeHtml(m.ticker || "")}"
+        ${g.allowed ? "" : `disabled title="${escapeHtml(g.reason || "Blocked")}" aria-disabled="true"`}>Buy</button></span>
+    </div>
+    ${m.ticker === expandedTicker ? featureBreakdown(m) : ""}`;
+}
+
+function paintScanWindow() {
+  const body = $("#market-list");
+  if (!body) return;
+  const rows = scanRows;
+  const offsets = new Array(rows.length + 1);
+  offsets[0] = 0;
+  for (let i = 0; i < rows.length; i++) offsets[i + 1] = offsets[i] + rowH(rows[i]);
+  body.style.height = offsets[rows.length] + "px";
+  let start = 0;
+  let end = rows.length;
+  if (rows.length > VIRTUAL_AFTER) {
+    const top = body.getBoundingClientRect().top + window.scrollY;
+    const viewTop = window.scrollY - top;
+    const viewBot = viewTop + window.innerHeight;
+    let lo = 0;
+    let hi = rows.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (offsets[mid + 1] < viewTop) lo = mid + 1;
+      else hi = mid;
+    }
+    start = Math.max(0, lo - OVERSCAN);
+    end = start;
+    while (end < rows.length && offsets[end] < viewBot) end++;
+    end = Math.min(rows.length, end + OVERSCAN);
+  }
+  const html = [];
+  for (let i = start; i < end; i++) {
+    const m = rows[i];
+    const g = m.geo || { allowed: true };
+    html.push(
+      `<div class="scan-row${g.allowed ? "" : " is-blocked"}${m.ticker === expandedTicker ? " open" : ""}" role="row" data-i="${i}"
+        style="top:${offsets[i]}px;height:${rowH(m)}px">${scanRowHtml(m)}</div>`
+    );
+  }
+  body.innerHTML = html.join("");
+}
+
+let scanPaintQueued = false;
+function queueScanPaint() {
+  if (scanPaintQueued) return;
+  scanPaintQueued = true;
+  requestAnimationFrame(() => {
+    scanPaintQueued = false;
+    paintScanWindow();
+  });
+}
+window.addEventListener("scroll", () => scanRows.length > VIRTUAL_AFTER && queueScanPaint(), { passive: true });
+window.addEventListener("resize", queueScanPaint);
+
+$("#market-list").addEventListener("click", (ev) => {
+  const buy = ev.target.closest(".buy-btn");
+  const rowEl = ev.target.closest(".scan-row");
+  if (!rowEl) return;
+  const m = scanRows[Number(rowEl.dataset.i)];
+  if (!m) return;
+  if (buy) {
+    ev.stopPropagation();
+    if (buy.disabled) return;
+    openContract(m.ticker, m);
+    return;
+  }
+  expandedTicker = expandedTicker === m.ticker ? null : m.ticker;
+  paintScanWindow();
+});
+
 function renderMarkets(data) {
-  const list = $("#market-list");
-  list.innerHTML = "";
+  scanWeights = data.model_weights || scanWeights;
   const meta = [
-    `Updated: ${fmtTs(data.updated_at)}`,
-    data.from_cache ? "cache HIT" : "live fetch",
-    `host: ${data.host}`,
-    `enriched ${data.count}/${data.scanned}`,
-    `sort ${data.sort || "payout"}`,
-    `TTL ${data.cache_ttl_seconds}s`,
+    `Updated ${fmtTs(data.updated_at)}`,
+    data.from_cache ? "cached" : "live",
+    `${data.count}/${data.scanned} markets`,
+    `sort ${data.sort || "mispricing"}`,
+    `model v${data.model_version ?? 0}`,
   ];
+  if (data.model_uncalibrated) meta.push("model uncalibrated · Kelly halved");
   if (data.espn) meta.push(`ESPN ${data.espn.matched || 0} matched (${data.espn.live || 0} live)`);
-  const rows = payoutSort(data.markets).filter(matchesFilter);
-  if (scanFilter !== "all") meta.push(`showing ${rows.length} (${filterLabel(scanFilter)})`);
-  const metaText = meta.join(" · ");
-  $("#scan-meta").textContent = metaText + " — " + (data.disclaimer || "");
-  if (!rows.length) {
-    list.innerHTML = `<div class="card muted">No markets match “${escapeHtml(
+  if (data.geo) meta.push(`geo ${data.geo.state || "unknown"} · ${data.geo.blocked || 0} blocked`);
+  // Server order is the ranking (mispricing first); filters only hide rows.
+  scanRows = (data.markets || []).filter(matchesFilter);
+  if (scanFilter !== "all") meta.push(`showing ${scanRows.length} (${filterLabel(scanFilter)})`);
+  $("#scan-meta").textContent = meta.join(" · ") + " — " + (data.disclaimer || "");
+  if (!scanRows.length) {
+    $("#market-list").style.height = "auto";
+    $("#market-list").innerHTML = `<div class="card muted">No markets match “${escapeHtml(
       filterLabel(scanFilter)
     )}” right now. Tap All, or scan again closer to game time.</div>`;
     return;
   }
-
-  rows.slice(0, 60).forEach((m) => {
-    const div = document.createElement("div");
-    div.className = "market-item";
-    const action = m.nash?.action || "PASS";
-    const sig = m.signal === "GO" ? "GO" : "NO-GO";
-    const gk = m.gemini_kelly || {};
-    const why = (m.explainer && (m.explainer.edge_plain || m.explainer.why_odds)) || "";
-    const hint = m.espn_hint || "";
-    const mult = m.best_payout_multiple ?? "—";
-    div.innerHTML = `
-      <div class="stats">
-        <span class="chip payout">${mult}x</span>
-        ${probSourceChip(m)}
-        <span class="chip ${sig === "GO" ? "go" : "nogo"}">${sig}</span>
-        <span class="chip">Gemini Kelly $${gk.allocation ?? "—"}</span>
-        <span class="chip">edge ${m.kelly?.edge ?? "—"}</span>
-        <span class="chip">EV ${m.kelly?.expected_value_per_contract ?? "—"}</span>
-      </div>
-      <div class="ticker" style="margin-top:6px">${escapeHtml(m.ticker || "")}</div>
-      <div class="title">${escapeHtml(m.title || "")}</div>
-      ${espnLine(m)}
-      <div class="stats">
-        <span class="chip yes">YES ${m.yes_ask_cents}¢ · ${m.yes_payout_multiple}x</span>
-        <span class="chip no">NO ${m.no_ask_cents}¢ · ${m.no_payout_multiple}x</span>
-        <span class="chip action">${action}</span>
-        <span class="chip">Nash ${m.nash_payoff_gemini ?? "—"}</span>
-      </div>
-      ${hint ? `<p class="why espn-hint">${escapeHtml(hint)}</p>` : ""}
-      <p class="why">${escapeHtml(why)}</p>`;
-    div.addEventListener("click", () => openContract(m.ticker, m));
-    list.appendChild(div);
-  });
+  paintScanWindow();
 }
 
 function probSourceChip(m) {
@@ -310,21 +423,31 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-async function runScan(force = false) {
+let scanInFlight = false;
+async function runScan(force = false, quiet = false) {
+  if (scanInFlight) return;
+  scanInFlight = true;
   const limit = parseInt($("#scan-limit").value || "80", 10);
-  toast(force ? "Force refreshing…" : "Scanning…");
+  if (!quiet) toast(force ? "Force refreshing…" : "Scanning…");
   try {
-    const data = await api(
-      `/api/markets/scan?limit=${limit}&refresh=${force ? "true" : "false"}&sort=payout`
-    );
+    const data = await api(`/scanner?limit=${limit}&refresh=${force ? "true" : "false"}`);
     lastScan = data;
     renderMarkets(data);
-    toast(`Scan done · ${data.count} markets`);
+    if (!quiet) toast(`Scan done · ${data.count} markets`);
   } catch (e) {
-    toast("Scan failed: " + e.message);
+    if (!quiet) toast("Scan failed: " + e.message);
     $("#scan-meta").textContent = "Error: " + e.message;
+  } finally {
+    scanInFlight = false;
   }
 }
+
+function panelVisible(name) {
+  const el = $("#panel-" + name);
+  return document.visibilityState === "visible" && el && el.classList.contains("active");
+}
+// Poll every 5 s while the scanner is on screen (server caches for CACHE_TTL_SECONDS).
+setInterval(() => panelVisible("scanner") && runScan(false, true), 5000);
 
 function openContract(ticker, preview) {
   $("#contract-ticker").value = ticker;

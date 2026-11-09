@@ -320,3 +320,40 @@ input, select, textarea { font-size: 16px; } /* 16px stops iOS/Android zoom-on-f
 .big-number { font-size: 2rem; font-weight: 800; color: var(--cyan); }
 .pos-row { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.85rem; }
 details > summary { cursor: pointer; min-height: 32px; }
+
+/* ---------- Operator console: scanner table ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.scan-table { margin: 10px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.scan-head, .scan-main {
+  display: grid; align-items: center; gap: 6px;
+  grid-template-columns: minmax(0, 2.4fr) repeat(5, minmax(0, 1fr)) minmax(0, 1.1fr) 64px;
+  padding: 0 10px;
+}
+.scan-head {
+  position: sticky; top: 0; z-index: 15; height: 36px;
+  background: rgba(11, 15, 26, 0.96); border-bottom: 1px solid var(--border);
+  font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.scan-body { position: relative; }
+.scan-row {
+  position: absolute; left: 0; right: 0; overflow: hidden; cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 0.82rem;
+}
+.scan-row:hover, .scan-row.open { background: rgba(77, 226, 255, 0.05); }
+.scan-main { height: 48px; font-family: var(--mono); }
+.c-ticker { display: flex; flex-direction: column; min-width: 0; }
+.c-ticker .mono { color: var(--cyan); font-size: 0.74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-ticker small { color: var(--muted); font-family: var(--font); font-size: 0.68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edge.pos { color: var(--green); font-weight: 700; }
+.edge.neg { color: var(--red); font-weight: 700; }
+.edge.flat { color: var(--muted); }
+.geo { font-size: 0.7rem; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); }
+.geo.ok { color: var(--green); border-color: rgba(52, 211, 153, 0.4); }
+.geo.blocked { color: var(--red); border-color: rgba(248, 113, 113, 0.45); }
+.buy-btn { min-height: 44px; width: 100%; padding: 6px 8px; }
+.feat { padding: 8px 10px 10px; }
+.feat-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.74rem; }
+.feat-table th, .feat-table td { text-align: right; padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.feat-table th:first-child, .feat-table td:first-child { text-align: left; color: var(--muted); }
+.feat-sum { margin: 6px 0 0; font-size: 0.76rem; color: var(--text); }

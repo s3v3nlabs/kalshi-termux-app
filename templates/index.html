@@ -68,8 +68,8 @@
         <button class="btn ghost hidden" id="btn-install" type="button">Install app</button>
       </details>
       <div class="card">
-        <h2>Highest payouts first</h2>
-        <p class="muted">Open markets sorted by payout multiple, highest first. A big multiple (8x, 13x) means the market implies a low chance — not a likely win. Kelly and Nash figures are estimates. Nothing here is guaranteed.</p>
+        <h2>Scanner · ranked by mispricing</h2>
+        <p class="muted">Which markets does the model think are most mispriced? Rank = |Nash equilibrium P − market P| over the 10 busiest markets, then the rest by payout. Tap a row for the model inputs. Estimates only — nothing here is guaranteed.</p>
         <p class="muted scan-help">Scanning works without a key. Paper bets (no money) stay on this phone. Real bets use your Kalshi balance after you allow live trading and type ARM LIVE.</p>
         <div class="row" style="margin-top:10px">
           <button class="btn big" id="btn-scan" type="button">Scan live</button>
@@ -87,7 +87,19 @@
         </div>
         <p class="muted" id="scan-meta" style="margin-top:8px">Not scanned yet.</p>
       </div>
-      <div class="market-list" id="market-list"></div>
+      <div class="scan-table" id="scan-table" role="table" aria-label="Scanner">
+        <div class="scan-head" role="row">
+          <span role="columnheader">Ticker</span>
+          <span role="columnheader">Mkt P</span>
+          <span role="columnheader">Model P</span>
+          <span role="columnheader">Nash P</span>
+          <span role="columnheader">Edge</span>
+          <span role="columnheader">Kelly $</span>
+          <span role="columnheader">Geo</span>
+          <span role="columnheader" class="sr-only">Buy</span>
+        </div>
+        <div class="scan-body" id="market-list" role="rowgroup"></div>
+      </div>
     </section>
 
     <!-- CONTRACT -->

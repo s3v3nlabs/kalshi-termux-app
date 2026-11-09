@@ -585,6 +585,7 @@ def scan_opportunities(
         "updated_at": now,
         "model_uncalibrated": uncalibrated,
         "model_version": model_doc.get("version", 0),
+        "model_weights": weights,
         "calibration_brier": (calibration or {}).get("brier"),
         "calibration_n": (calibration or {}).get("n", 0),
         "cache_ttl_seconds": settings.cache_ttl,
