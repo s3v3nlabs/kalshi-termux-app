@@ -11,6 +11,31 @@ Mobile-first **Kalshi prediction-market** web app for Termux → browser.
 
 > Not financial advice. Prediction markets involve risk of loss. **No 100% win-rate claims.**
 
+
+## Screenshots
+
+Taken in **PAPER** mode with no API keys saved. Public market data is from Kalshi; bankroll shows "no key / $0.00".
+
+![Scanner home](docs/screenshots/scanner-overview-desktop.png)
+
+*Scanner home, ranked by mispricing, in PAPER mode with no API key.*
+
+![Expanded row and Research panel](docs/screenshots/scanner-desktop.png)
+
+*An expanded scanner row with model inputs and the Research panel.*
+
+![Settings Speed card](docs/screenshots/settings-speed-desktop.png)
+
+*Settings: PAPER trading mode and the Speed card (feed, API tier, sniper off).*
+
+![Scanner on a phone](docs/screenshots/scanner-mobile.png)
+
+*Scanner at a phone-sized width (412×915).*
+
+![Settings Speed card on a phone](docs/screenshots/settings-speed-mobile.png)
+
+*Settings Speed card at a phone-sized width.*
+
 ## Speed pack (v1.3.0)
 
 The speed pack stays inside Kalshi's rules: **one key, one client, one shared rate budget**. No proxies, extra accounts or keys, IP rotation, or location spoofing.
