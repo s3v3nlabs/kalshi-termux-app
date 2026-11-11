@@ -204,5 +204,5 @@ MIT — see `LICENSE`. Read `DISCLAIMER.md` before trading.
 
 ## Author
 
-**Christian Wilford** (s3v3n), AI Architect and offensive security enthusiast, founder of Singular/ty Labs.
+**Christian Wilford** (s3v3n), AI Architect and offensive security enthusiast, founder of Singular/ty Defense Solutions, LLC.
 GitHub: [@s3v3nlabs](https://github.com/s3v3nlabs)
