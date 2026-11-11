@@ -201,3 +201,8 @@ RSA key     → RSA-PSS SHA-256, MGF1 SHA-256, salt = DIGEST_LENGTH
 ## License
 
 MIT — see `LICENSE`. Read `DISCLAIMER.md` before trading.
+
+## Author
+
+**Christian Wilford** (s3v3n), AI Architect and offensive security enthusiast, founder of Singular/ty Labs.
+GitHub: [@s3v3nlabs](https://github.com/s3v3nlabs)
